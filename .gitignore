@@ -45,6 +45,7 @@ bld/
 .tools/
 
 ## Publish output
+artifacts/
 **/[Pp]ublish/
 
 ## VS Code

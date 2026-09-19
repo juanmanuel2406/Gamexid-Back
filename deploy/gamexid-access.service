@@ -1,0 +1,19 @@
+[Unit]
+Description=Gamexid pilot access service
+After=network.target
+[Service]
+User=gamexid-access
+Group=gamexid-access
+WorkingDirectory=/opt/gamexid-access
+ExecStart=/opt/gamexid-access/Gamexid.Access --urls http://127.0.0.1:5098
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=Access__PasswordHashFile=/etc/gamexid-access/password.hash
+Environment=Access__KeysPath=/var/lib/gamexid-access/keys
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/gamexid-access
+[Install]
+WantedBy=multi-user.target
