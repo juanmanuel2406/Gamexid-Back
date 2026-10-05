@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace FastScan.Models;
+namespace Gamexid.Models;
 
 public enum MovementType { Receipt = 1, Transfer, Sale, Return, Adjustment }
 public enum UserRole { Administrator = 1, Manager, Operator }

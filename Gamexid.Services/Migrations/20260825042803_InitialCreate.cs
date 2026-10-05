@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace FastScan.Services.Migrations
+namespace Gamexid.Services.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration

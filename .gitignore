@@ -66,3 +66,9 @@ Desktop.ini
 ## Env files
 *.env
 appsettings.Production.json
+appsettings.Local.json
+*.pem
+*.key
+*.pfx
+*aiven*.txt
+secrets/

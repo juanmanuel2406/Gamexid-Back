@@ -3,12 +3,12 @@
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <UserSecretsId>gamexid-local-development</UserSecretsId>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.8" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -17,8 +17,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FastScan.Models\FastScan.Models.csproj" />
-    <ProjectReference Include="..\FastScan.Services\FastScan.Services.csproj" />
+    <ProjectReference Include="..\Gamexid.Models\Gamexid.Models.csproj" />
+    <ProjectReference Include="..\Gamexid.Services\Gamexid.Services.csproj" />
+    <Compile Include="..\Gamexid.Access\GamingCityApi.cs" Link="Integrations\GamingCityApi.cs" />
   </ItemGroup>
 
 </Project>

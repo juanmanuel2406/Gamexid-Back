@@ -1,8 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace FastScan.Services.Migrations
+namespace Gamexid.Services.Migrations
 {
     /// <inheritdoc />
     public partial class AddUserCredentials : Migration

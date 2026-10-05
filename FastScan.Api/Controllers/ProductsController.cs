@@ -1,6 +1,0 @@
-using FastScan.Models; using FastScan.Services; using Microsoft.AspNetCore.Mvc; using Microsoft.EntityFrameworkCore;
-namespace FastScan.Api.Controllers;
-public record CreateProductRequest(string Sku, string Name, string Ean, bool RequiresSerialNumber);
-[ApiController, Route("api/products")]
-public class ProductsController(FastScanDbContext db) : ControllerBase
-{ [HttpGet] public async Task<IActionResult> GetAll() => Ok(await db.Products.OrderBy(x => x.Name).ToListAsync()); [HttpGet("ean/{ean}")] public async Task<IActionResult> GetByEan(string ean) { var product = await db.Products.SingleOrDefaultAsync(x => x.Ean == ean); return product is null ? NotFound() : Ok(product); } [HttpPost] public async Task<IActionResult> Create(CreateProductRequest request) { if (await db.Products.AnyAsync(x => x.Sku == request.Sku || x.Ean == request.Ean)) return Conflict(new { message = "El SKU o EAN ya está registrado." }); var product = new Product { Sku = request.Sku.Trim(), Name = request.Name.Trim(), Ean = request.Ean.Trim(), RequiresSerialNumber = request.RequiresSerialNumber }; db.Products.Add(product); await db.SaveChangesAsync(); return Created($"api/products/ean/{product.Ean}", product); } }
