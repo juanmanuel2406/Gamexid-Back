@@ -44,10 +44,23 @@ builder.Services.AddHttpClient<GamingCityApi>(client =>
 {
     client.BaseAddress = new Uri("https://portal.gaming-city.com.ar/gcapi/");
     client.Timeout = TimeSpan.FromSeconds(20);
-}).RemoveAllLoggers();
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddOpenApi();
 var app = builder.Build();
+if (args.Contains("--check-gc"))
+{
+    try {
+        var gc = app.Services.GetRequiredService<GamingCityApi>();
+        var catalog = await gc.Query("products", "RYZEN 5 3400G", CancellationToken.None);
+        var product = await gc.ById("4715", CancellationToken.None);
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { connected = true, catalog.Total, product.Id }));
+    } catch {
+        Console.WriteLine("No se pudo verificar Gaming City; credencial y respuesta omitidas.");
+        Environment.ExitCode = 2;
+    }
+    return;
+}
 database = app.Services.GetRequiredService<DatabaseConfiguration>();
 if (args.Contains("--check-db"))
 {

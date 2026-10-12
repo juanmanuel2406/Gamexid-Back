@@ -81,3 +81,26 @@ Estos cambios no se publicaron en Ubuntu ni se subieron a GitHub. El servicio
 se inicia `Gamexid.Api`, que incluye autenticación mediante cookies ASP.NET Core.
 Antes de publicar, configurar secretos y CA en Ubuntu, revisar el proxy de `/api`
 y permitir cargas PDF de hasta 11 MB. No reutilizar el límite anterior de 4 KB.
+
+## Catálogo Gaming City
+
+Las consultas se realizan desde el servidor con `GamingCitySaaS:Iue` (variable de
+entorno `GamingCitySaaS__Iue`). Guardar su valor en el almacén de secretos .NET para
+desarrollo y en un archivo privado del servicio para producción. Nunca ponerlo en
+Git, Angular, argumentos de URL del navegador ni documentación.
+
+- `GET /api/access/gc/status`: configuración presente, sin afirmar conexión.
+- `GET /api/access/gc/products?search=...`: búsqueda de 3 a 80 caracteres.
+- `GET /api/access/gc/products/{id}`: detalle para depósito 1.
+- Requieren sesión y limitación de consultas. Solo lectura; no sincronizan inventario.
+- El proveedor devuelve `estado` y `resultados`; `solicitud` contiene la credencial
+  y se descarta. Solo se publican ID, nombre, código, código de proveedor, SKU,
+  precio final y stock. No se publican costos ni otros campos del proveedor.
+- Máximo 8 MB por respuesta y 100 resultados visibles; la respuesta indica truncación.
+- Redirecciones y logs HTTP del conector desactivados.
+- `dotnet run --project Gamexid.Api -- --check-gc` comprueba catálogo y detalle
+  reales usando la configuración privada, sin mostrar secretos ni modificar datos.
+
+El frontend actual requiere Gamexid.Api y su conexión MySQL; Gamexid.Access aislado
+no implementa los endpoints de inventario. Al publicar, verificar todas las rutas
+`/api/`, HTTPS, sesión y configuración privada antes de cambiar el frontend.
