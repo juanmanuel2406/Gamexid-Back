@@ -15,6 +15,8 @@ public class GamingCityTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Uri = request.RequestUri;
+            Assert.Equal("Gamexid/1.0", request.Headers.UserAgent.ToString());
+            Assert.Equal("application/json", request.Headers.Accept.ToString());
             return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
         }
     }
@@ -85,6 +87,14 @@ public class GamingCityTests
         var handler = new Handler("");
         await Assert.ThrowsAsync<ArgumentException>(() => Connector(handler).ById(id, default));
         Assert.Null(handler.Uri);
+    }
+    [Fact]
+    public async Task PreservesProviderRateLimitWithoutExposingItsBody()
+    {
+        var handler = new Handler(Secret, HttpStatusCode.TooManyRequests);
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => Connector(handler).Query("products", "ryzen", default));
+        Assert.Equal(HttpStatusCode.TooManyRequests, error.StatusCode);
+        Assert.DoesNotContain(Secret, error.Message);
     }
     [Fact]
     public async Task CatalogEndpointsRequireAuthentication()

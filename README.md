@@ -104,3 +104,24 @@ Git, Angular, argumentos de URL del navegador ni documentación.
 El frontend actual requiere Gamexid.Api y su conexión MySQL; Gamexid.Access aislado
 no implementa los endpoints de inventario. Al publicar, verificar todas las rutas
 `/api/`, HTTPS, sesión y configuración privada antes de cambiar el frontend.
+
+## Publicación del 12 de octubre de 2026
+
+Producción: https://gamexid.goodlycomunicacion.com.
+
+- Gamexid.Api escucha solo en 127.0.0.1:5099; servicio gamexid-api.
+- Se conservan login/logout del servicio gamexid-access en 127.0.0.1:5098 para
+  mantener la contraseña existente. /api/access/me y los datos usan la API nueva.
+- La identidad del administrador del piloto (ID 1) se verificó contra Aiven;
+  ambos servicios usan el mismo nombre de aplicación y directorio de claves de sesión.
+- El resto de /api/ se dirige a Gamexid.Api. La extracción PDF tiene su límite propio.
+- Configuración privada en /etc/gamexid-api/appsettings.Production.json, permisos
+  root:gamexid-access 640; enlace desde la carpeta de versión. CA en el mismo directorio.
+- El conector identifica las consultas con User-Agent Gamexid/1.0 y Accept application/json.
+  El proveedor rechazaba consultas desde el VPS sin estos encabezados. HTTP 429 se
+  muestra como límite temporal del proveedor, sin reintentos automáticos agresivos.
+- No se hicieron migraciones ni escrituras de inventario; la comprobación autenticada
+  fue de solo lectura con una sesión temporal. Se conservó el dominio antiguo retirado.
+
+Los archivos deploy/gamexid-api.service y deploy/nginx-gamexid-api.conf reflejan
+esta instalación. Revisar las rutas de versión antes de reutilizarlos en otra máquina.

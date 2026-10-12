@@ -48,8 +48,10 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
         ct = deadline.Token;
         if (!IsConfigured(config)) throw new InvalidOperationException("Falta configurar la credencial privada de Gaming City.");
         using var request = new HttpRequestMessage(HttpMethod.Get, path + "&iue=" + Uri.EscapeDataString(config["GamingCitySaaS:Iue"]!));
+        request.Headers.UserAgent.ParseAdd("Gamexid/1.0");
+        request.Headers.Accept.ParseAdd("application/json");
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!response.IsSuccessStatusCode) throw new HttpRequestException("Gaming City rechazó la consulta.");
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException("Gaming City rechazó la consulta.", null, response.StatusCode);
         const int maxBytes = 8_000_000;
         if (response.Content.Headers.ContentLength > maxBytes) throw new InvalidDataException("Respuesta demasiado grande; afiná la búsqueda.");
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -96,6 +98,9 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
         try { return Results.Ok(new { source = "Gaming City", readOnly = true, data = await action() }); }
         catch (ArgumentException e) { return Results.BadRequest(new { mensaje = e.Message }); }
         catch (InvalidOperationException e) { return Results.Json(new { mensaje = e.Message }, statusCode: 503); }
+        catch (HttpRequestException e) when (e.StatusCode == System.Net.HttpStatusCode.TooManyRequests) {
+            return Results.Json(new { mensaje = "Gaming City limitó temporalmente las consultas. Esperá unos segundos y volvé a intentar." }, statusCode: 429);
+        }
         catch (Exception e) when (e is HttpRequestException or IOException or JsonException or OperationCanceledException) {
             return Results.Json(new { mensaje = "No se pudo consultar Gaming City. Reintentá con una búsqueda más específica." }, statusCode: 502);
         }

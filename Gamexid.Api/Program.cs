@@ -53,6 +53,7 @@ if (args.Contains("--check-gc"))
     try {
         var gc = app.Services.GetRequiredService<GamingCityApi>();
         var catalog = await gc.Query("products", "RYZEN 5 3400G", CancellationToken.None);
+        await Task.Delay(TimeSpan.FromSeconds(2));
         var product = await gc.ById("4715", CancellationToken.None);
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { connected = true, catalog.Total, product.Id }));
     } catch {

@@ -1,0 +1,20 @@
+[Unit]
+Description=Gamexid inventory and Gaming City API
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=gamexid-access
+Group=gamexid-access
+WorkingDirectory=/opt/gamexid/releases/20261012/api
+ExecStart=/opt/gamexid/releases/20261012/api/Gamexid.Api --urls http://127.0.0.1:5099
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/gamexid-access
+UMask=0027
+[Install]
+WantedBy=multi-user.target
