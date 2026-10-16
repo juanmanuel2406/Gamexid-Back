@@ -11,10 +11,27 @@ public class GamexidDbContext(DbContextOptions<GamexidDbContext> options) : DbCo
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
     public DbSet<InventoryMovementItem> InventoryMovementItems => Set<InventoryMovementItem>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<SerialNumber> SerialNumbers => Set<SerialNumber>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
         base.OnModelCreating(model);
+        model.Entity<Order>().Property(x => x.Version).IsConcurrencyToken();
+        model.Entity<Order>().HasIndex(x => new { x.BranchId, x.Created });
+        model.Entity<Order>().HasIndex(x => new { x.BranchId, x.Supplier, x.Reference }).IsUnique();
+        model.Entity<Order>().HasOne<Branch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
+        model.Entity<Order>().HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+        model.Entity<Order>().HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);
+        model.Entity<OrderItem>().HasOne<Product>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        model.Entity<OrderItem>().HasIndex(x => new { x.OrderId, x.ProductId }).IsUnique();
+        model.Entity<OrderItem>().Property(x => x.UnitPrice).HasPrecision(18, 2);
+        model.Entity<OrderItem>().Property(x => x.Total).HasPrecision(18, 2);
+        model.Entity<OrderItem>().HasMany(x => x.Serials).WithOne().HasForeignKey(x => x.OrderItemId).OnDelete(DeleteBehavior.Restrict);
+        model.Entity<SerialNumber>().HasIndex(x => x.Serial).IsUnique();
+        model.Entity<SerialNumber>().HasIndex(x => x.SerializedUnitId).IsUnique();
+        model.Entity<SerialNumber>().HasOne<SerializedUnit>().WithMany().HasForeignKey(x => x.SerializedUnitId).OnDelete(DeleteBehavior.Restrict);
         model.Entity<Branch>().HasIndex(x => x.Code).IsUnique();
         model.Entity<Product>().HasIndex(x => x.Sku).IsUnique();
         model.Entity<Product>().HasIndex(x => x.Ean).IsUnique();

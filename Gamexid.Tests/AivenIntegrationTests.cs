@@ -47,6 +47,7 @@ public class AivenIntegrationTests
         var user = new User { Email = marker.ToLowerInvariant() + "@example.invalid", FullName = marker, Role = UserRole.Administrator, PasswordHash = BCrypt.Net.BCrypt.HashPassword(marker) };
         var ean = Random.Shared.NextInt64(1000000000000, 9999999999999).ToString();
         var productId = 0;
+        var orderId = Guid.NewGuid();
         try
         {
             db.Users.Add(user);
@@ -76,21 +77,48 @@ public class AivenIntegrationTests
             Assert.Equal(HttpStatusCode.OK, pdf.StatusCode);
             var extraction = await pdf.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(100m, extraction.GetProperty("lines")[0].GetProperty("unitPrice").GetDecimal());
+            var orderDto = new CreateOrderDto(orderId, marker, marker, depotId, DateTime.UtcNow, "qa.pdf",
+                [new CreateOrderLineDto(ean, marker, marker, 2, 100m, 200m, "ARS")]);
+            var orderResult = await client.PostAsJsonAsync("/api/orders", orderDto);
+            Assert.Equal(HttpStatusCode.Created, orderResult.StatusCode);
+            var order = (await orderResult.Content.ReadFromJsonAsync<OrderResponseDto>())!;
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/orders", orderDto)).StatusCode);
+            var scan = new SaveSerialDto(order.Lines[0].Id, marker + "-ORDER-1");
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync($"/api/orders/{orderId}/serials", scan)).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync($"/api/orders/{orderId}/serials", scan)).StatusCode);
+            var concurrent = await Task.WhenAll(
+                client.PostAsJsonAsync($"/api/orders/{orderId}/serials", scan with { Serial = marker + "-ORDER-2" }),
+                client.PostAsJsonAsync($"/api/orders/{orderId}/serials", scan with { Serial = marker + "-ORDER-3" }));
+            Assert.Single(concurrent, r => r.StatusCode == HttpStatusCode.OK);
+            Assert.Single(concurrent, r => r.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.ServiceUnavailable);
+            var page = await client.GetFromJsonAsync<OrderPageDto>("/api/orders?search=" + marker);
+            Assert.Equal("Received", Assert.Single(page!.Items).Status);
+            Assert.Equal(2, page.Items[0].Lines[0].Received);
+            Assert.Equal(3, await db.SerializedUnits.CountAsync(u => u.ProductId == productId));
+            Assert.Equal(3, await db.InventoryMovements.CountAsync(m => m.RegisteredByUserId == user.Id));
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/products/lookup?code=" + scan.Serial)).StatusCode);
         }
         finally
         {
             await using var cleanup = await db.Database.BeginTransactionAsync();
-            var movements = db.InventoryMovements.Where(m => m.RegisteredByUserId == user.Id && m.Notes == marker);
+            var movements = db.InventoryMovements.Where(m => m.RegisteredByUserId == user.Id &&
+                (m.Notes == marker || m.Notes == "Pedido " + marker));
             var ids = await movements.Select(m => m.Id).ToListAsync();
             await db.InventoryMovementItems.Where(i => ids.Contains(i.InventoryMovementId)).ExecuteDeleteAsync();
             await movements.ExecuteDeleteAsync();
+            var lineIds = await db.OrderItems.Where(i => i.OrderId == orderId).Select(i => i.Id).ToListAsync();
+            await db.SerialNumbers.Where(s => lineIds.Contains(s.OrderItemId)).ExecuteDeleteAsync();
+            await db.OrderItems.Where(i => i.OrderId == orderId).ExecuteDeleteAsync();
+            await db.Orders.Where(o => o.Id == orderId && o.CreatedByUserId == user.Id).ExecuteDeleteAsync();
             var productIds = await db.Products.Where(p => p.Sku == marker && p.Name == marker).Select(p => p.Id).ToListAsync();
-            await db.SerializedUnits.Where(u => productIds.Contains(u.ProductId) && u.SerialNumber == marker + "-SN").ExecuteDeleteAsync();
+            await db.SerializedUnits.Where(u => productIds.Contains(u.ProductId) &&
+                (u.SerialNumber == marker + "-SN" || u.SerialNumber.StartsWith(marker + "-ORDER-"))).ExecuteDeleteAsync();
             await db.Products.Where(p => productIds.Contains(p.Id) && p.Sku == marker).ExecuteDeleteAsync();
             await db.Users.Where(u => u.Id == user.Id && u.Email == user.Email).ExecuteDeleteAsync();
             await cleanup.CommitAsync();
             Assert.False(await db.Products.AnyAsync(p => p.Sku == marker));
             Assert.False(await db.Users.AnyAsync(u => u.Email == user.Email));
+            Assert.False(await db.Orders.AnyAsync(o => o.Id == orderId));
         }
     }
 }
