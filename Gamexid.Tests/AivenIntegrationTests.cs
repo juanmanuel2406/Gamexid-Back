@@ -70,6 +70,9 @@ public class AivenIntegrationTests
             var identified = await client.GetFromJsonAsync<JsonElement>("/api/products/lookup?code=" + marker + "-SN");
             Assert.Equal("serial", identified.GetProperty("matchedBy").GetString());
             Assert.True(identified.GetProperty("alreadyInInventory").GetBoolean());
+            var stock = await client.GetFromJsonAsync<JsonElement>("/api/inventory/stock?branchId=" + depotId + "&search=" + marker.ToLowerInvariant());
+            Assert.Equal(1, stock.GetArrayLength());
+            Assert.Equal(1, stock[0].GetProperty("stock").GetInt32());
             Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/inventory/receipts", receipt)).StatusCode);
             using var form = new MultipartFormDataContent();
             form.Add(new ByteArrayContent(PdfAndConfigurationTests.Pdf("EAN " + ean + " Producto QA Cantidad 2 Precio ARS 100,00 Total 200,00")), "file", "qa.pdf");
