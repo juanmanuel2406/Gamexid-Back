@@ -5,7 +5,6 @@ namespace Gamexid.Models;
 public class Order
 {
     public Guid Id { get; set; }
-    [MaxLength(160)] public string Supplier { get; set; } = "";
     [MaxLength(100)] public string Reference { get; set; } = "";
     public int BranchId { get; set; }
     public int CreatedByUserId { get; set; }
@@ -42,7 +41,7 @@ public class SerialNumber
     public DateTime ScannedDate { get; set; } = DateTime.UtcNow;
 }
 
-public record CreateOrderDto(Guid Id, string Supplier, string Reference, int BranchId, DateTime Created,
+public record CreateOrderDto(Guid Id, string Reference, int BranchId, DateTime Created,
     string? FileName, CreateOrderLineDto[] Lines);
 public record CreateOrderLineDto(string Ean, string? Sku, string Name, int Expected,
     decimal? UnitPrice, decimal? Total, string? Currency);
@@ -50,6 +49,6 @@ public record SaveSerialDto(int OrderItemId, string Serial);
 public record SerialResponseDto(int Id, string Serial, string Status, DateTime ScannedDate);
 public record OrderLineResponseDto(int Id, int ProductId, string Ean, string Sku, string Name, int Expected,
     int Received, decimal? UnitPrice, decimal? Total, string? Currency, SerialResponseDto[] Serials);
-public record OrderResponseDto(Guid Id, string Supplier, string Reference, int BranchId, DateTime Created,
+public record OrderResponseDto(Guid Id, string Reference, int BranchId, DateTime Created,
     string FileName, string Status, OrderLineResponseDto[] Lines);
 public record OrderPageDto(OrderResponseDto[] Items, int Total, int Page, int PageSize);

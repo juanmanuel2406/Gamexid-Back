@@ -20,7 +20,7 @@ public class GamexidDbContext(DbContextOptions<GamexidDbContext> options) : DbCo
         base.OnModelCreating(model);
         model.Entity<Order>().Property(x => x.Version).IsConcurrencyToken();
         model.Entity<Order>().HasIndex(x => new { x.BranchId, x.Created });
-        model.Entity<Order>().HasIndex(x => new { x.BranchId, x.Supplier, x.Reference }).IsUnique();
+        model.Entity<Order>().HasIndex(x => new { x.BranchId, x.Reference }).IsUnique();
         model.Entity<Order>().HasOne<Branch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
         model.Entity<Order>().HasOne<User>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
         model.Entity<Order>().HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Restrict);

@@ -9,6 +9,33 @@ namespace Gamexid.Api.Controllers;
 [ApiController, Route("api/inventory")]
 public class InventoryController(GamexidDbContext db) : ControllerBase
 {
+    [HttpGet("stock")]
+    public async Task<IActionResult> Stock([FromQuery] int branchId, CancellationToken ct, [FromQuery] string? search = null)
+    {
+        if (branchId <= 0 || !await db.Branches.AnyAsync(b => b.Id == branchId && b.IsActive, ct))
+            return BadRequest(new { mensaje = "Seleccioná una sucursal activa." });
+        var term = search?.Trim().ToUpperInvariant() ?? "";
+        if (term.Length > 100 || term.Any(char.IsControl))
+            return BadRequest(new { mensaje = "La búsqueda admite hasta 100 caracteres." });
+        var products = db.Products.AsNoTracking().Where(p => p.IsActive);
+        if (term.Length > 0)
+            products = products.Where(p => p.Name.ToUpper().Contains(term) || p.Ean.ToUpper().Contains(term) ||
+                p.Sku.ToUpper().Contains(term) || db.SerializedUnits.Any(u => u.ProductId == p.Id &&
+                    u.CurrentBranchId == branchId && u.SerialNumber.ToUpper().Contains(term)));
+        var rows = await products.OrderBy(p => p.Name).Select(p => new {
+            p.Id, p.Name, p.Sku, p.Ean, p.RequiresSerialNumber, p.IsActive, BranchId = branchId,
+            Stock = p.RequiresSerialNumber
+                ? db.SerializedUnits.Count(u => u.ProductId == p.Id && u.CurrentBranchId == branchId && u.Status == "Available")
+                : (from item in db.InventoryMovementItems
+                   join movement in db.InventoryMovements on item.InventoryMovementId equals movement.Id
+                   where item.ProductId == p.Id && item.SerializedUnitId == null &&
+                       (movement.DestinationBranchId == branchId || movement.SourceBranchId == branchId)
+                   select (movement.DestinationBranchId == branchId ? item.Quantity : 0) -
+                       (movement.SourceBranchId == branchId ? item.Quantity : 0)).Sum()
+        }).ToListAsync(ct);
+        return Ok(rows);
+    }
+
     [HttpGet("movements")]
     public async Task<IActionResult> Movements(CancellationToken ct)
     {

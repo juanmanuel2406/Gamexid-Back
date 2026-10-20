@@ -4,23 +4,19 @@ using System.Text;
 using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.WordExtractor;
-
 namespace Gamexid.Services;
-
 public sealed record InvoiceLine(string Ean, string? Sku, string Name, decimal? Expected, decimal? UnitPrice,
-    decimal? Total, string? Currency, int Page, string RawText, string[] Warnings)
+    decimal? Total, string? Currency, int Page, string[] Warnings)
 {
     public decimal? Confidence => null;
 }
-public sealed record InvoiceExtraction(string Source, InvoiceLine[] Lines, string[] Warnings, int Pages, bool RequiresOcr);
+public sealed record InvoiceExtraction(string Source, InvoiceLine[] Lines, string[] Warnings, int Pages, bool RequiresOcr, string? Reference);
 public sealed record PositionedWord(string Text, double X, double Y);
-
 public sealed class PdfInvoiceExtractor
 {
     public const int MaxBytes = 10 * 1024 * 1024;
     private static readonly TimeSpan RegexLimit = TimeSpan.FromMilliseconds(100);
     private static Match Match(string text, string pattern) => Regex.Match(text, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, RegexLimit);
-
     public InvoiceExtraction Extract(byte[] bytes, CancellationToken ct = default)
     {
         if (bytes.Length is < 5 or > MaxBytes || Encoding.ASCII.GetString(bytes, 0, 5) != "%PDF-")
@@ -31,13 +27,15 @@ public sealed class PdfInvoiceExtractor
         var lines = new List<InvoiceLine>();
         var warnings = new List<string>();
         var requiresOcr = false;
+        var references = new HashSet<string>();
+        string? documentCurrency = null;
         for (var n = 1; n <= document.NumberOfPages; n++)
         {
             ct.ThrowIfCancellationRequested();
             if (timer.Elapsed > TimeSpan.FromSeconds(20)) throw new InvalidDataException("El PDF es demasiado complejo. Dividilo en archivos más pequeños.");
             var page = document.GetPage(n);
             var words = page.GetWords(NearestNeighbourWordExtractor.Instance).Take(25001)
-                .Select(w => new PositionedWord(w.Text, (double)w.BoundingBox.Left, (double)w.BoundingBox.Bottom)).ToArray();
+                .Where(w => !string.IsNullOrWhiteSpace(w.Text)).Select(w => new PositionedWord(w.Text, (double)w.BoundingBox.Left, (double)w.BoundingBox.Bottom)).ToArray();
             if (words.Length > 25000) throw new InvalidDataException("La página supera el límite de texto admitido.");
             if (words.Length == 0)
             {
@@ -53,6 +51,12 @@ public sealed class PdfInvoiceExtractor
                 else row.Add(word);
             }
             Dictionary<string, double>? columns = null;
+            var reference = ReferenceBelowHeading(rows);
+            if (reference != null) references.Add(reference);
+            var currencyLabels = rows.Select(r => string.Join(" ", r.OrderBy(w => w.X).Select(w => w.Text)))
+                .Where(r => Match(r, @"\b(?:moneda|currency)\b").Success).ToArray();
+            var pageCurrency = Currency(string.Join(" ", currencyLabels));
+            if (pageCurrency != null) documentCurrency = pageCurrency;
             foreach (var row in rows)
             {
                 ct.ThrowIfCancellationRequested();
@@ -61,6 +65,10 @@ public sealed class PdfInvoiceExtractor
                 var header = Header(ordered);
                 if (header != null) { columns = header; continue; }
                 var line = columns != null ? FromColumns(ordered, columns, n, raw) : FromLabels(raw, n);
+                if (line != null && line.Currency == null && documentCurrency != null &&
+                    !HasCurrency(raw))
+                    line = line with { Currency = documentCurrency,
+                        Warnings = line.Warnings.Where(w => !w.StartsWith("Moneda")).ToArray() };
                 if (line != null) lines.Add(line);
                 if (lines.Count > 1000) throw new InvalidDataException("El documento supera 1000 líneas de productos.");
             }
@@ -69,12 +77,44 @@ public sealed class PdfInvoiceExtractor
         if (lines.GroupBy(l => l.Ean.Length > 0 ? l.Ean : l.Sku).Any(g => g.Count() > 1))
             warnings.Add("Hay productos repetidos en el PDF. Revisá y unificá sus cantidades e importes; no se suman automáticamente.");
         warnings.Add("Revisá códigos, cantidades, precios, impuestos y descuentos contra el PDF antes de guardar. No se calcularon importes faltantes.");
-        return new("pdfpig", lines.ToArray(), warnings.ToArray(), document.NumberOfPages, requiresOcr);
+        if (references.Count != 1) warnings.Add("Referencia pendiente: verificá el número debajo de PEDIDO SUCURSAL.");
+        return new("pdfpig", lines.ToArray(), warnings.ToArray(), document.NumberOfPages, requiresOcr,
+            references.Count == 1 ? references.Single() : null);
     }
-
+    public static string? ReferenceBelowHeading(List<List<PositionedWord>> rows)
+    {
+        var found = new HashSet<string>();
+        for (var i = 0; i + 1 < rows.Count; i++)
+        {
+            var row = rows[i].OrderBy(w => w.X).ToArray();
+            for (var j = 0; j < row.Length; j++)
+            {
+                var combined = Normal(row[j].Text) == "pedidosucursal";
+                if (!combined && (Normal(row[j].Text) != "pedido" || j + 1 >= row.Length || Normal(row[j + 1].Text) != "sucursal")) continue;
+                var right = combined ? row[j].X + 140 : row[j + 1].X + 70;
+                var below = rows.Skip(i + 1).TakeWhile(r => row[j].Y - r[0].Y <= 60)
+                    .SelectMany(r => r).Where(w => w.X >= row[j].X - 10 && w.X <= right &&
+                        Match(w.Text, @"^\d+(?:-\d+)*$").Success)
+                    .OrderByDescending(w => w.Y).ToArray();
+                if (below.Length > 0)
+                {
+                    var nearest = below.Where(w => Math.Abs(w.Y - below[0].Y) <= 3).ToArray();
+                    if (nearest.Length == 1) found.Add(nearest[0].Text);
+                }
+            }
+        }
+        return found.Count == 1 ? found.Single() : null;
+    }
+    private static bool HasCurrency(string text) =>
+        Match(text, @"\b(?:USD|ARS|pesos|d[oó]lares)\b|US\$|U\$S").Success;
+    public static string? Currency(string text)
+    {
+        var usd = Match(text, @"\bUSD\b|US\$|U\$S|\bd[oó]lares\b").Success;
+        var ars = Match(text, @"\bARS\b|\bpesos\b").Success;
+        return usd == ars ? null : usd ? "USD" : "ARS";
+    }
     private static string Normal(string value) => new(value.ToLowerInvariant().Normalize(NormalizationForm.FormD)
         .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark && char.IsLetterOrDigit(c)).ToArray());
-
     private static Dictionary<string, double>? Header(PositionedWord[] words)
     {
         if (words.Any(w => Regex.IsMatch(w.Text, @"^\d"))) return null;
@@ -89,14 +129,15 @@ public sealed class PdfInvoiceExtractor
                 "cantidad" or "cant" or "qty" => "quantity",
                 "precio" or "punit" or "punitario" or "preciounitario" or "unitario" => "price",
                 "importe" or "subtotal" or "total" => "total",
+                "moneda" or "currency" => "currency",
                 _ => null
             };
+            if (text == "precio" && i + 1 < words.Length && Normal(words[i + 1].Text) == "total" && words[i + 1].X - words[i].X < 50) key = "total";
             if (key != null && !result.ContainsKey(key)) result[key] = words[i].X;
         }
         return (result.ContainsKey("ean") || result.ContainsKey("sku")) && result.ContainsKey("name") &&
             (result.ContainsKey("quantity") || result.ContainsKey("price")) ? result : null;
     }
-
     private static InvoiceLine? FromColumns(PositionedWord[] words, Dictionary<string, double> columns, int page, string raw)
     {
         if (words.Length == 0 || Regex.IsMatch(Normal(words[0].Text), "^(total|subtotal|iva|descuento|percepcion|neto|cuit|fecha)$")) return null;
@@ -117,34 +158,32 @@ public sealed class PdfInvoiceExtractor
         if (name.Length == 0) return null;
         return Make(ean, sku, name, Read("quantity"), Read("price"), Read("total"), raw, page);
     }
-
     public static InvoiceLine? FromLabels(string text, int page = 1)
     {
         var ean = Match(text, @"\b(?:EAN|GTIN)(?:-13)?\s*[:=]?\s*(\d{14}|\d{13}|\d{12}|\d{8})(?!\d)");
         var sku = Match(text, @"\bSKU\s*[:=]?\s*([A-Z0-9][A-Z0-9._/-]{0,39})(?=\s|$)");
         if (!ean.Success && !sku.Success) return null;
         var quantity = Match(text, @"\b(?:Cantidad|Cant\.?|Qty)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)");
-        var price = Match(text, @"\b(?:Precio(?:\s+unitario)?|P\.?\s*Unit\.?)\s*[:=]?\s*(?:ARS|USD|\$)?\s*([0-9][0-9.,]*)");
-        var total = Match(text, @"\b(?:Importe|Subtotal|Total)\s*[:=]?\s*(?:ARS|USD|\$)?\s*([0-9][0-9.,]*)");
+        var price = Match(text, @"\b(?:Precio(?:\s+unitario)?|P\.?\s*Unit(?:ario)?\.?)\s*[:=]?\s*(?:ARS|USD|US\$|U\$S|\$)?\s*([0-9][0-9.,]*)");
+        var total = Match(text, @"\b(?:Importe|Subtotal|Total)\s*[:=]?\s*(?:ARS|USD|US\$|U\$S|\$)?\s*([0-9][0-9.,]*)");
         var description = Match(text, @"\b(?:Descripcion|Descripción|Producto)\s*[:=]?\s*(.*?)(?=\s+(?:Cantidad|Cant\.?|Qty|Precio|Importe|Total)\b|$)");
         return Make(ean.Groups[1].Value, sku.Groups[1].Value, description.Groups[1].Value,
             quantity.Groups[1].Value, price.Groups[1].Value, total.Groups[1].Value, text, page);
     }
-
     public static decimal? Number(string value)
     {
-        var number = value.Trim().Replace("$", "").Replace("ARS", "", StringComparison.OrdinalIgnoreCase).Replace("USD", "", StringComparison.OrdinalIgnoreCase).Trim();
+        var number = Regex.Replace(value.Trim(), @"ARS|USD|US\$|U\$S|\$", "", RegexOptions.IgnoreCase, RegexLimit).Trim();
         if (!Regex.IsMatch(number, @"^[0-9]+(?:[.,][0-9]+)*$")) return null;
         if (number.Contains(',') && number.Contains('.'))
         {
             if (number.LastIndexOf(',') > number.LastIndexOf('.')) number = number.Replace(".", "").Replace(',', '.');
             else number = number.Replace(",", "");
         }
+        else if (Regex.IsMatch(number, @"^\d{1,3}(?:,\d{3})+$")) number = number.Replace(",", "");
         else if (number.Contains(',')) number = number.Replace(',', '.');
         else if (Regex.IsMatch(number, @"^\d{1,3}(?:\.\d{3})+$")) number = number.Replace(".", "");
         return decimal.TryParse(number, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed) && parsed >= 0 ? parsed : null;
     }
-
     private static InvoiceLine Make(string ean, string sku, string name, string quantity, string price, string total, string raw, int page)
     {
         var expected = Number(quantity);
@@ -154,8 +193,11 @@ public sealed class PdfInvoiceExtractor
         if (expected is null || expected <= 0) { expected = null; warnings.Add("Cantidad pendiente de revisión."); }
         if (unitPrice == null) warnings.Add("Precio unitario no identificado.");
         if (name.Length == 0) warnings.Add("Descripción pendiente.");
-        var currency = Match(raw, @"\bUSD\b|US\$").Success ? "USD" : Match(raw, @"\bARS\b").Success ? "ARS" : null;
+        var currency = Currency(raw);
         if (currency == null) warnings.Add("Moneda no confirmada; el símbolo $ no identifica por sí solo la moneda.");
-        return new(ean, string.IsNullOrWhiteSpace(sku) ? null : sku, name, expected, unitPrice, amount, currency, page, raw, warnings.ToArray());
+        if (unitPrice.HasValue && amount.HasValue && expected.HasValue &&
+            decimal.Round(unitPrice.Value * expected.Value, 2) != amount)
+            warnings.Add("El precio unitario por la cantidad no coincide con el total; revisá descuentos e impuestos.");
+        return new(ean, string.IsNullOrWhiteSpace(sku) ? null : sku, name, expected, unitPrice, amount, currency, page, warnings.ToArray());
     }
 }

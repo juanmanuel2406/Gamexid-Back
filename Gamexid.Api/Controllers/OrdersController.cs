@@ -35,7 +35,7 @@ public class OrdersController(GamexidDbContext db) : ControllerBase
         if (actor.Role != UserRole.Administrator) query = query.Where(x => x.BranchId == actor.BranchId);
         if (branchId != null) query = query.Where(x => x.BranchId == branchId);
         if (status != null) query = query.Where(x => x.Status == status);
-        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Reference.Contains(search) || x.Supplier.Contains(search));
+        if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Reference.Contains(search));
         var total = await query.CountAsync(ct);
         var items = await query.OrderByDescending(x => x.Created).ThenBy(x => x.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
@@ -48,7 +48,7 @@ public class OrdersController(GamexidDbContext db) : ControllerBase
         var actor = await Actor(ct);
         if (actor is null) return Unauthorized();
         if (!CanAccess(actor, dto.BranchId)) return Forbid();
-        if (dto.Id == Guid.Empty || !Text(dto.Supplier, 160) || !Text(dto.Reference, 100) ||
+        if (dto.Id == Guid.Empty || !Text(dto.Reference, 100) ||
             !Text(dto.FileName ?? "", 255, false) || dto.Created == default ||
             dto.Created > DateTime.UtcNow.AddDays(1) ||
             dto.Lines is null || dto.Lines.Length is < 1 or > 100 ||
@@ -58,9 +58,10 @@ public class OrdersController(GamexidDbContext db) : ControllerBase
                 l.Total is < 0 or > 9999999999999999.99m ||
                 (l.UnitPrice.HasValue && decimal.Round(l.UnitPrice.Value, 2) != l.UnitPrice) ||
                 (l.Total.HasValue && decimal.Round(l.Total.Value, 2) != l.Total) ||
-                l.Currency is not (null or "ARS" or "USD")) ||
+                l.Currency is not (null or "ARS" or "USD") ||
+                ((l.UnitPrice.HasValue || l.Total.HasValue) && l.Currency == null)) ||
             dto.Lines.Select(l => l.Ean).Distinct().Count() != dto.Lines.Length)
-            return BadRequest(new { mensaje = "Revisá proveedor, documento, EAN, cantidades y precios (máximo dos decimales)." });
+            return BadRequest(new { mensaje = "Revisá documento, EAN, cantidades, moneda y precios (máximo dos decimales)." });
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(dto))));
         var existing = await FullOrders().AsNoTracking().FirstOrDefaultAsync(x => x.Id == dto.Id, ct);
         if (existing != null)
@@ -71,7 +72,7 @@ public class OrdersController(GamexidDbContext db) : ControllerBase
         await using IDbContextTransaction tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
-            var order = new Order { Id = dto.Id, Supplier = dto.Supplier.Trim(), Reference = dto.Reference.Trim(),
+            var order = new Order { Id = dto.Id, Reference = dto.Reference.Trim(),
                 BranchId = dto.BranchId, Created = dto.Created.ToUniversalTime(), CreatedByUserId = actor.Id,
                 FileName = dto.FileName ?? "", RequestHash = hash };
             foreach (var line in dto.Lines)
@@ -147,7 +148,7 @@ public class OrdersController(GamexidDbContext db) : ControllerBase
         }
     }
 
-    private static OrderResponseDto View(Order o) => new(o.Id, o.Supplier, o.Reference, o.BranchId,
+    private static OrderResponseDto View(Order o) => new(o.Id, o.Reference, o.BranchId,
         DateTime.SpecifyKind(o.Created, DateTimeKind.Utc), o.FileName, o.Status,
         o.Lines.OrderBy(x => x.Id).Select(l => new OrderLineResponseDto(l.Id, l.ProductId, l.Ean, l.Sku, l.Name,
             l.Expected, l.Serials.Count, l.UnitPrice, l.Total, l.Currency,

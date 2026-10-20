@@ -158,11 +158,6 @@ namespace Gamexid.Services.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)");
 
-                    b.Property<string>("Supplier")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("varchar(160)");
-
                     b.Property<Guid>("Version")
                         .IsConcurrencyToken()
                         .HasColumnType("char(36)");
@@ -173,7 +168,7 @@ namespace Gamexid.Services.Migrations
 
                     b.HasIndex("BranchId", "Created");
 
-                    b.HasIndex("BranchId", "Supplier", "Reference")
+                    b.HasIndex("BranchId", "Reference")
                         .IsUnique();
 
                     b.ToTable("Orders");

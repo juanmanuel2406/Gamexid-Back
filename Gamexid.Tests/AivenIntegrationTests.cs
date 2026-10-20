@@ -77,7 +77,7 @@ public class AivenIntegrationTests
             Assert.Equal(HttpStatusCode.OK, pdf.StatusCode);
             var extraction = await pdf.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(100m, extraction.GetProperty("lines")[0].GetProperty("unitPrice").GetDecimal());
-            var orderDto = new CreateOrderDto(orderId, marker, marker, depotId, DateTime.UtcNow, "qa.pdf",
+            var orderDto = new CreateOrderDto(orderId, marker, depotId, DateTime.UtcNow, "qa.pdf",
                 [new CreateOrderLineDto(ean, marker, marker, 2, 100m, 200m, "ARS")]);
             var orderResult = await client.PostAsJsonAsync("/api/orders", orderDto);
             Assert.Equal(HttpStatusCode.Created, orderResult.StatusCode);

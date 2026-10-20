@@ -3,28 +3,23 @@ using Gamexid.Models;
 using Gamexid.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
 namespace Gamexid.Api.Controllers;
-
 public record CreateProductRequest(
     [Required, MaxLength(40)] string Sku,
     [Required, MaxLength(180)] string Name,
     [Required, RegularExpression(@"^(?:\d{8}|\d{12,14})$")] string Ean,
     bool RequiresSerialNumber);
-
 [ApiController, Route("api/products")]
 public class ProductsController(GamexidDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetAll(CancellationToken ct) => Ok(await db.Products.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct));
-
     [HttpGet("ean/{ean}")]
     public async Task<IActionResult> GetByEan(string ean, CancellationToken ct)
     {
         var product = await db.Products.AsNoTracking().SingleOrDefaultAsync(x => x.Ean == ean.Trim() && x.IsActive, ct);
         return product is null ? NotFound() : Ok(product);
     }
-
     [HttpGet("lookup")]
     public async Task<IActionResult> Lookup([FromQuery] string code, CancellationToken ct)
     {
@@ -38,15 +33,24 @@ public class ProductsController(GamexidDbContext db) : ControllerBase
         if (candidates.Count > 1)
             return Conflict(new { mensaje = "El código coincide con más de un producto. Identificá el producto por su EAN.", code = "ambiguous_code" });
         if (candidates.Count == 0)
-            return NotFound(new { mensaje = "Código sin relación registrada. Un serial nuevo necesita asociarse primero a un producto por EAN o SKU.", code = "unknown_code" });
+        {
+            var products = await db.Products.AsNoTracking().Where(p => p.IsActive).ToListAsync(ct);
+            var serials = await db.SerializedUnits.AsNoTracking().Select(u => new { u.ProductId, u.SerialNumber }).ToListAsync(ct);
+            var serialScores = serials.GroupBy(u => u.ProductId).ToDictionary(g => g.Key,
+                g => g.Max(u => ProductMatching.Score(value, u.SerialNumber)));
+            var suggestions = products.Select(p => new { product = p, score = new[] {
+                ProductMatching.Score(value, p.Ean), ProductMatching.Score(value, p.Sku),
+                ProductMatching.Score(value, p.Name), serialScores.GetValueOrDefault(p.Id) }.Max() })
+                .Where(x => x.score >= .75).OrderByDescending(x => x.score).ThenBy(x => x.product.Id).Take(5).ToArray();
+            return NotFound(new { mensaje = "Código sin coincidencia exacta. Seleccioná un producto para confirmar la asociación.",
+                code = "unknown_code", suggestions });
+        }
         var product = candidates[0];
         return Ok(new { product, matchedBy = unit != null ? "serial" : product.Ean == value ? "ean" : "sku", unit, alreadyInInventory = unit != null });
     }
-
     [HttpGet("{id:int}/units")]
-    public async Task<IActionResult> Units(int id, CancellationToken ct) =>
-        Ok(await db.SerializedUnits.AsNoTracking().Where(x => x.ProductId == id).OrderBy(x => x.SerialNumber).ToListAsync(ct));
-
+    public async Task<IActionResult> Units(int id, CancellationToken ct, int? branchId = null) =>
+        Ok(await db.SerializedUnits.AsNoTracking().Where(x => x.ProductId == id && (branchId == null || x.CurrentBranchId == branchId)).OrderBy(x => x.SerialNumber).ToListAsync(ct));
     [HttpPost]
     public async Task<IActionResult> Create(CreateProductRequest request, CancellationToken ct)
     {

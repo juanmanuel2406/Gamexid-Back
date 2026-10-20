@@ -10,7 +10,7 @@ namespace Gamexid.Tests;
 
 public class OrderTests
 {
-    private static CreateOrderDto Draft(int expected = 2) => new(Guid.NewGuid(), "Supplier QA", "DOC-" + Guid.NewGuid(),
+    private static CreateOrderDto Draft(int expected = 2) => new(Guid.NewGuid(), "DOC-" + Guid.NewGuid(),
         2, DateTime.UtcNow, "invoice.pdf",
         [new("7790000000011", "NOTE-001", "Notebook", expected, 100m, 100m * expected, "ARS")]);
 
@@ -20,11 +20,13 @@ public class OrderTests
         using var factory = new ApiFactory();
         using var client = await factory.Client();
         var dto = Draft();
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/orders",
+            dto with { Lines = [dto.Lines[0] with { Currency = null }] })).StatusCode);
         var create = await client.PostAsJsonAsync("/api/orders", dto);
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
         var order = (await create.Content.ReadFromJsonAsync<OrderResponseDto>())!;
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/orders", dto)).StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/orders", dto with { Supplier = "Changed" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/orders", dto with { Reference = "Changed" })).StatusCode);
         var scan = new SaveSerialDto(order.Lines[0].Id, "order-sn-01");
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync($"/api/orders/{order.Id}/serials",
             scan with { Serial = order.Lines[0].Ean })).StatusCode);
@@ -70,7 +72,7 @@ public class OrderTests
         using var factory = new ApiFactory();
         using var client = await factory.Client();
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/orders", Draft(0))).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/orders", Draft() with { Supplier = "" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/orders", Draft() with { Reference = "" })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/orders?pageSize=1000")).StatusCode);
         var dto = Draft();
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/orders", dto with { Lines = [dto.Lines[0], dto.Lines[0]] })).StatusCode);

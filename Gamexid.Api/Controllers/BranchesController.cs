@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using Gamexid.Models;
 using Gamexid.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -16,6 +17,9 @@ public class BranchesController(GamexidDbContext db) : ControllerBase
     [HttpPost, Authorize(Roles = "Administrator")]
     public async Task<IActionResult> Create(CreateBranchRequest request, CancellationToken ct)
     {
+        if (!int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId) ||
+            !await db.Users.AnyAsync(u => u.Id == userId && u.IsActive && u.Role == UserRole.Administrator, ct))
+            return Forbid();
         if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Name))
             return BadRequest(new { mensaje = "Completá código y nombre." });
         var code = request.Code.Trim().ToUpperInvariant();
