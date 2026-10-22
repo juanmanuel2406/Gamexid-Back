@@ -10,10 +10,23 @@ public record CreateProductRequest(
     [Required, RegularExpression(@"^(?:\d{8}|\d{12,14})$")] string Ean,
     bool RequiresSerialNumber);
 [ApiController, Route("api/products")]
-public class ProductsController(GamexidDbContext db) : ControllerBase
+public class ProductsController : ControllerBase
 {
+    private readonly GamexidDbContext db;
+
+    public ProductsController(GamexidDbContext db)
+    {
+        this.db = db;
+    }
+
     [HttpGet]
-    public async Task<IActionResult> GetAll(CancellationToken ct) => Ok(await db.Products.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct));
+    public async Task<IActionResult> GetAll(CancellationToken ct)
+    {
+        var productos = await db.Products.AsNoTracking()
+            .OrderBy(producto => producto.Name)
+            .ToListAsync(ct);
+        return Ok(productos);
+    }
     [HttpGet("ean/{ean}")]
     public async Task<IActionResult> GetByEan(string ean, CancellationToken ct)
     {
@@ -38,19 +51,45 @@ public class ProductsController(GamexidDbContext db) : ControllerBase
             var serials = await db.SerializedUnits.AsNoTracking().Select(u => new { u.ProductId, u.SerialNumber }).ToListAsync(ct);
             var serialScores = serials.GroupBy(u => u.ProductId).ToDictionary(g => g.Key,
                 g => g.Max(u => ProductMatching.Score(value, u.SerialNumber)));
-            var suggestions = products.Select(p => new { product = p, score = new[] {
-                ProductMatching.Score(value, p.Ean), ProductMatching.Score(value, p.Sku),
-                ProductMatching.Score(value, p.Name), serialScores.GetValueOrDefault(p.Id) }.Max() })
+            var suggestions = products.Select(producto => new
+                {
+                    product = producto,
+                    score = CalcularCoincidencia(value, producto, serialScores.GetValueOrDefault(producto.Id))
+                })
                 .Where(x => x.score >= .75).OrderByDescending(x => x.score).ThenBy(x => x.product.Id).Take(5).ToArray();
             return NotFound(new { mensaje = "Código sin coincidencia exacta. Seleccioná un producto para confirmar la asociación.",
                 code = "unknown_code", suggestions });
         }
         var product = candidates[0];
-        return Ok(new { product, matchedBy = unit != null ? "serial" : product.Ean == value ? "ean" : "sku", unit, alreadyInInventory = unit != null });
+        var matchedBy = "sku";
+        if (unit != null)
+        {
+            matchedBy = "serial";
+        }
+        else if (product.Ean == value)
+        {
+            matchedBy = "ean";
+        }
+        return Ok(new { product, matchedBy, unit, alreadyInInventory = unit != null });
     }
+
+    private static double CalcularCoincidencia(string codigo, Product producto, double coincidenciaSerial)
+    {
+        var coincidenciaEan = ProductMatching.Score(codigo, producto.Ean);
+        var coincidenciaSku = ProductMatching.Score(codigo, producto.Sku);
+        var coincidenciaNombre = ProductMatching.Score(codigo, producto.Name);
+        return Math.Max(Math.Max(coincidenciaEan, coincidenciaSku), Math.Max(coincidenciaNombre, coincidenciaSerial));
+    }
+
     [HttpGet("{id:int}/units")]
-    public async Task<IActionResult> Units(int id, CancellationToken ct, int? branchId = null) =>
-        Ok(await db.SerializedUnits.AsNoTracking().Where(x => x.ProductId == id && (branchId == null || x.CurrentBranchId == branchId)).OrderBy(x => x.SerialNumber).ToListAsync(ct));
+    public async Task<IActionResult> Units(int id, CancellationToken ct, int? branchId = null)
+    {
+        var unidades = await db.SerializedUnits.AsNoTracking()
+            .Where(unidad => unidad.ProductId == id && (branchId == null || unidad.CurrentBranchId == branchId))
+            .OrderBy(unidad => unidad.SerialNumber)
+            .ToListAsync(ct);
+        return Ok(unidades);
+    }
     [HttpPost]
     public async Task<IActionResult> Create(CreateProductRequest request, CancellationToken ct)
     {
@@ -62,8 +101,14 @@ public class ProductsController(GamexidDbContext db) : ControllerBase
             return Conflict(new { mensaje = "El SKU o EAN ya está registrado." });
         var product = new Product { Sku = sku, Name = name, Ean = request.Ean, RequiresSerialNumber = request.RequiresSerialNumber };
         db.Products.Add(product);
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException) { return Conflict(new { mensaje = "No se pudo crear: comprobá si el SKU o EAN ya fue registrado." }); }
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { mensaje = "No se pudo crear: comprobá si el SKU o EAN ya fue registrado." });
+        }
         return Created($"/api/products/ean/{product.Ean}", product);
     }
 }
