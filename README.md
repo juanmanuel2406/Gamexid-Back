@@ -57,16 +57,6 @@ se niega a sobrescribir usuarios existentes.
   cantidades y precios cuando son identificables y exige revisión. Un PDF que
   contiene solamente imágenes necesita OCR. Impuestos y descuentos no se infieren.
 
-## Pruebas
-
-```powershell
-dotnet test Gamexid.Tests
-```
-
-Las pruebas ordinarias usan SQLite temporal, no Aiven. La prueba real de MySQL
-requiere habilitar explícitamente `GAMEXID_TEST_AIVEN=1`; crea registros con un
-identificador QA único y los elimina al terminar, incluso si una comprobación falla.
-
 ## Alcance y publicación
 
 Inventario, usuarios, productos, sucursales, unidades e ingresos usan MySQL.
