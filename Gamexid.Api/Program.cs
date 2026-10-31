@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Gamexid.Api.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets(DatabaseConfiguration.SecretsId);
@@ -14,6 +15,15 @@ var database = DatabaseConfiguration.Load(builder.Configuration);
 builder.Services.AddSingleton(database);
 builder.Services.AddDbContext<GamexidDbContext>(database.Configure);
 builder.Services.AddSingleton<PdfInvoiceExtractor>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<ProductPageReader>(client => {
+    client.Timeout = TimeSpan.FromSeconds(8);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Gamexid/1.0");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
+builder.Services.AddHttpClient<IGamexidAiService, GeminiGamexidAiService>(client => {
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
+    client.Timeout = TimeSpan.FromSeconds(25);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
 builder.Services.AddCors(options => options.AddPolicy("Gamexid", policy => policy
     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:4200"])
     .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
@@ -39,6 +49,9 @@ builder.Services.AddRateLimiter(options =>
     options.AddFixedWindowLimiter("login", opt => { opt.PermitLimit = 10; opt.Window = TimeSpan.FromMinutes(1); opt.QueueLimit = 0; });
     options.AddConcurrencyLimiter("pdf", opt => { opt.PermitLimit = 2; opt.QueueLimit = 0; });
     options.AddFixedWindowLimiter("gc", opt => { opt.PermitLimit = 20; opt.Window = TimeSpan.FromMinutes(1); opt.QueueLimit = 0; });
+    options.AddPolicy("chat", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 8, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 builder.Services.AddHttpClient<GamingCityApi>(client =>
 {
@@ -103,7 +116,7 @@ app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value ?? "";
     var requiresDatabase = path.StartsWith("/api/products") || path.StartsWith("/api/branches") ||
-        path.StartsWith("/api/inventory") || path.StartsWith("/api/orders") ||
+        path.StartsWith("/api/inventory") || path.StartsWith("/api/orders") || path.StartsWith("/api/chat") ||
         path is "/api/access/login" or "/api/auth/login" or "/api/access/me";
     if (requiresDatabase && database.ConnectionString is null)
     {

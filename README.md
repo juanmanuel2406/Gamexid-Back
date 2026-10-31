@@ -115,3 +115,17 @@ Producción: https://gamexid.goodlycomunicacion.com.
 
 Los archivos deploy/gamexid-api.service y deploy/nginx-gamexid-api.conf reflejan
 esta instalación. Revisar las rutas de versión antes de reutilizarlos en otra máquina.
+
+## Asistente de Productos y Pedidos
+
+`POST /api/chat/ask` recibe `mensaje`, `contextoPantalla`, `sucursalId` y hasta seis
+`preguntasAnteriores`. Requiere sesión y la cabecera `X-Gamexid: 1`. Los pedidos
+se limitan a la sucursal autorizada; el catálogo consulta el depósito del portal.
+El asistente solo lee datos. Las fotos provienen de las fichas de Gaming City.
+
+Configurar `Gemini:Enabled`, `Gemini:ApiKey` y `Gemini:Model` en secretos locales
+o en la configuración privada del VPS. Modelo comprobado: `gemini-3.5-flash-lite`.
+Nunca colocar la clave en Angular ni en archivos versionados. El proveedor recibe
+las consultas y los datos necesarios de productos/pedidos, sin credenciales ni costos.
+`GET /api/chat/status` indica si está configurado. Límite: ocho consultas por minuto
+por usuario, tres simultáneas y hasta seis llamadas a herramientas por consulta.

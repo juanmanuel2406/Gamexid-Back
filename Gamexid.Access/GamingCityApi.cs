@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 
 public sealed record GamingCityProduct(string Id, string Name, string Code, string SupplierCode,
-    string Sku, decimal? Price, decimal? Stock);
+    string Sku, decimal? Price, decimal? Stock, string Description = "", string? WebUrl = null);
 public sealed record GamingCityBranch(int Id, string Name, int DepotId);
 public sealed record GamingCityCatalog(GamingCityProduct[] Products, int Total, bool Truncated);
 
@@ -142,7 +142,27 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
         var id = Field("idproducto", 80);
         var name = Field("nombre");
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name)) throw new InvalidDataException("Producto sin identidad.");
-        return new(id, name, Field("codigo", 100), Field("codigoproveedor", 1000), Field("sku", 100), Number("preciofinal"), row.TryGetProperty("stockactual", out _) ? AvailableStock(row, branchId) : null);
+        var description = "";
+        if (row.TryGetProperty("obstienda", out var details) && details.ValueKind == JsonValueKind.String)
+        {
+            var raw = details.GetString() ?? "";
+            if (raw.Length <= 12000 && !config.GetSection("GamingCitySaaS").AsEnumerable().Any(p =>
+                p.Key.EndsWith(":Iue", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(p.Value) && raw.Contains(p.Value, StringComparison.Ordinal)))
+            {
+                description = System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace(raw,
+                    "<[^>]*>", " ", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100)));
+                description = System.Text.RegularExpressions.Regex.Replace(description, @"\s+", " ").Trim();
+                if (description.Length > 2500) description = description[..2500];
+            }
+        }
+        var webUrl = Field("webURL", 1500);
+        if (!Uri.TryCreate(webUrl, UriKind.Absolute, out var web) || web.Scheme != "https" ||
+            web.Host is not ("www.gamingcity.com.ar" or "gamingcity.com.ar") || !web.IsDefaultPort ||
+            web.UserInfo.Length > 0 || web.Query.Length > 0 || web.Fragment.Length > 0 ||
+            !web.AbsolutePath.EndsWith("--det--" + id, StringComparison.Ordinal)) webUrl = "";
+        return new(id, name, Field("codigo", 100), Field("codigoproveedor", 1000), Field("sku", 100), Number("preciofinal"),
+            row.TryGetProperty("stockactual", out _) ? AvailableStock(row, branchId) : null, description,
+            string.IsNullOrEmpty(webUrl) ? null : webUrl);
     }
 
     private static async Task<IResult> Respond<T>(Func<Task<T>> action)
