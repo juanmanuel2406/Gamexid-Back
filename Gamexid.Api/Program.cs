@@ -48,6 +48,7 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = 429;
     options.AddFixedWindowLimiter("login", opt => { opt.PermitLimit = 10; opt.Window = TimeSpan.FromMinutes(1); opt.QueueLimit = 0; });
     options.AddConcurrencyLimiter("pdf", opt => { opt.PermitLimit = 2; opt.QueueLimit = 0; });
+    options.AddConcurrencyLimiter("photos", opt => { opt.PermitLimit = 4; opt.QueueLimit = 12; });
     options.AddFixedWindowLimiter("gc", opt => { opt.PermitLimit = 20; opt.Window = TimeSpan.FromMinutes(1); opt.QueueLimit = 0; });
     options.AddPolicy("chat", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "anonymous",

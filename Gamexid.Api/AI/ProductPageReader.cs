@@ -11,16 +11,17 @@ public class ProductPageReader(HttpClient http, IMemoryCache cache)
     {
         var card = new AiProductCard(product.Id, product.Name, product.Code, product.Description, null, product.WebUrl);
         if (product.WebUrl == null) return card;
+        if (!IsSafePage(product.WebUrl, product.Id)) return card with { WebUrl = null };
         var uri = new Uri(product.WebUrl);
-        if (uri.Scheme != "https" || uri.Host is not ("www.gamingcity.com.ar" or "gamingcity.com.ar") ||
-            !uri.IsDefaultPort || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
-            !uri.AbsolutePath.EndsWith("--det--" + product.Id, StringComparison.Ordinal)) return card with { WebUrl = null };
         var key = "product-photo:" + product.WebUrl;
-        if (cache.TryGetValue<string>(key, out var image)) return card with { ImageUrl = image };
+        if (cache.TryGetValue<string>(key, out var image)) return card with { ImageUrl = string.IsNullOrEmpty(image) ? null : image };
         try
         {
             using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > 1_500_000) return card;
+            if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > 1_500_000) {
+                cache.Set(key, "", TimeSpan.FromMinutes(2));
+                return card;
+            }
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var buffer = new MemoryStream();
             var bytes = new byte[8192];
@@ -45,8 +46,14 @@ public class ProductPageReader(HttpClient http, IMemoryCache cache)
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or RegexMatchTimeoutException ||
             ex is OperationCanceledException && !ct.IsCancellationRequested) { }
+        cache.Set(key, "", TimeSpan.FromMinutes(2));
         return card;
     }
+
+    public static bool IsSafePage(string url, string id) => Uri.TryCreate(url, UriKind.Absolute, out var page) &&
+        page.Scheme == "https" && page.Host is "www.gamingcity.com.ar" or "gamingcity.com.ar" &&
+        page.IsDefaultPort && page.UserInfo.Length == 0 && page.Query.Length == 0 && page.Fragment.Length == 0 &&
+        page.AbsolutePath.EndsWith("--det--" + id, StringComparison.Ordinal);
 
     public static bool IsSafeImage(string url) => Uri.TryCreate(url, UriKind.Absolute, out var image) &&
         image.Scheme == "https" && image.Host is "www.gamingcity.com.ar" or "gamingcity.com.ar" &&

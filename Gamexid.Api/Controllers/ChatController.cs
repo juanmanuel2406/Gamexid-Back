@@ -26,6 +26,8 @@ public class ChatController(GamexidDbContext db, IGamexidAiService ai) : Control
         if (string.IsNullOrWhiteSpace(question.Mensaje) || question.Mensaje.Length > 1500 ||
             question.ContextoPantalla is not ("Productos" or "Pedidos") || question.SucursalId <= 0 ||
             question.PreguntasAnteriores is { Length: > 6 } ||
+            question.ProductosAnteriores is { Length: > 4 } ||
+            question.ProductosAnteriores?.Any(id => string.IsNullOrEmpty(id) || id.Length > 20 || id.Any(c => c is < '0' or > '9')) == true ||
             question.PreguntasAnteriores?.Any(text => text == null || text.Length > 1500) == true)
             return BadRequest(new { mensaje = "Revisá el mensaje, la pantalla y la sucursal seleccionada." });
         if (actor.Role != UserRole.Administrator && actor.BranchId != question.SucursalId) return Forbid();
