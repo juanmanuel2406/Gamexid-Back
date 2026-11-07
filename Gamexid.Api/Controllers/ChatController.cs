@@ -35,7 +35,7 @@ public class ChatController(GamexidDbContext db, IGamexidAiService ai) : Control
         if (branch == null) return BadRequest(new { mensaje = "Seleccioná una sucursal activa." });
         if (!ai.IsConfigured) return StatusCode(503, new { mensaje = "El asistente todavía no está activado. Falta configurar Gemini en el servidor." });
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(TimeSpan.FromSeconds(65));
+        deadline.CancelAfter(TimeSpan.FromSeconds(90));
         try
         {
             return Ok(await ai.AskAsync(question, new(actor.Id, branch.Id, branch.Name), deadline.Token));

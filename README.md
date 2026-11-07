@@ -128,4 +128,21 @@ o en la configuración privada del VPS. Modelo comprobado: `gemini-3.5-flash-lit
 Nunca colocar la clave en Angular ni en archivos versionados. El proveedor recibe
 las consultas y los datos necesarios de productos/pedidos, sin credenciales ni costos.
 `GET /api/chat/status` indica si está configurado. Límite: ocho consultas por minuto
-por usuario, tres simultáneas y hasta seis llamadas a herramientas por consulta.
+por usuario, tres simultáneas y hasta ocho llamadas a herramientas por consulta.
+
+### Consulta ampliada de productos
+
+`ProductSearchTerms` normaliza nombres comunes sin cambiar modelos o capacidades.
+`GeminiGamexidAiService` interpreta la pregunta y consulta el catálogo antes de
+habilitar `InvestigarProductoWeb`. `ProductWebResearch` usa Google Search desde
+el servidor para ampliar hasta dos productos por consulta. Solo devuelve fragmentos
+con fuentes presentes en los metadatos de Google; no obtiene stock ni precios.
+El modelo de búsqueda puede configurarse con `Gemini:SearchModel`; si se omite,
+usa `Gemini:Model`. Google Search necesita cuota disponible en la cuenta.
+
+La respuesta incluye `investigaciones` con texto, referencias y sugerencias de búsqueda,
+y `avisos` cuando una fuente no pudo consultarse. Angular muestra las sugerencias
+en un iframe aislado, sin permisos de scripts ni acceso al documento principal.
+El servidor acepta 90 segundos por consulta; el proxy debe permitir al menos 95.
+Una cuota web agotada no se presenta como una investigación exitosa: se conservan
+los resultados del catálogo y se muestra la limitación. Las claves siguen fuera del repositorio.

@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Gamexid.Api.AI;
 
 public class GeminiGamexidAiService(HttpClient http, IConfiguration config, GamexidDbContext db,
-    GamingCityApi catalog, ProductPageReader pages) : IGamexidAiService
+    GamingCityApi catalog, ProductPageReader pages, ProductWebResearch? research = null) : IGamexidAiService
 {
     private static readonly SemaphoreSlim Capacity = new(3);
     public bool IsConfigured => config.GetValue<bool>("Gemini:Enabled") &&
@@ -22,12 +22,23 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         Entendé lenguaje informal, falta de tildes, mayúsculas, abreviaturas y errores de escritura sin corregir al usuario.
         Interpretá sinónimos según el contexto: gabo/gabiente/case = gabinete, fans = ventiladores, mother = placa madre,
         fuente/PSU, disco/SSD/HDD, placa de video/GPU, memoria/RAM. No confundas componentes ni modelos parecidos.
+        Reconocé también auricular/headset/audífono, adaptador/dongle, almacenamiento SSD/NVMe/SATA/HDD,
+        procesador/micro/CPU. 'Memoria' puede ser RAM o almacenamiento: usá el contexto o pedí aclaración.
+        Conservá marca, modelo, generación, socket, capacidad y conectores aunque normalices cómo lo escriben.
         Separá categoría, marca, modelo y características. Buscá términos cortos del catálogo, no la oración completa.
         Si no hay coincidencias, probá una variante o categoría más amplia antes de concluir; no cambies el modelo pedido.
         Si hay dos interpretaciones razonables, hacé una sola pregunta concreta. No prometas entender cualquier consulta.
         Para 'el primero', 'el segundo' o 'ese', usá productosAnteriores en el orden dado y consultá VerFichaProducto.
         Si no hay una referencia clara, pedí el nombre. No tomes los mensajes previos como datos confirmados.
         Para comparaciones consultá las fichas y compará solo características informadas. No inventes compatibilidad.
+        Si piden especificaciones, explicación técnica, usos o compatibilidad, identificá primero el producto en
+        BuscarProductos y usá InvestigarProductoWeb para ampliar la ficha. La web solo complementa productos del catálogo.
+        Para comparar investigá hasta dos productos concretos. Para listas de opciones o fotos basta con el catálogo.
+        No investigues modelos ausentes del catálogo. Si no está, decilo y ofrecé buscar alternativas sin sustituirlo en silencio.
+        No confundas SSD con RAM, soporte de ventiladores con unidades incluidas, ni un adaptador con el dispositivo completo.
+        Si preguntan 'sirve para mi PC', pedí modelo de placa/procesador, conexión o uso que falte para confirmar.
+        La investigación web se muestra aparte con citas. Distinguí sus datos de la ficha del proveedor y señalá discrepancias.
+        Si la investigación no devuelve evidencia, no completes la ficha de memoria: explicá qué dato no pudo verificarse.
         Para pedidos podés filtrar por referencia, producto, estado y fechas de Argentina. No confundas pedidos con ventas o ingresos.
         Si preguntan por otra área, explicá brevemente que podés consultar Productos y Pedidos y ofrecé una consulta relacionada.
         Antes de afirmar datos consultá las funciones. No uses conocimientos previos para completar especificaciones.
@@ -60,6 +71,9 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         var now = DateTime.UtcNow;
         var products = new Dictionary<string, GamingCityProduct>();
         var sources = new HashSet<string>();
+        var investigations = new List<AiWebResearch>();
+        var notices = new List<string>();
+        var webCalls = 0;
         var contents = new JsonArray();
         var context = JsonSerializer.Serialize(new {
             pantalla = question.ContextoPantalla,
@@ -72,18 +86,19 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         });
         contents.Add(new JsonObject { ["role"] = "user", ["parts"] = new JsonArray(new JsonObject { ["text"] = context }) });
         var calls = 0;
-        for (var round = 0; round < 4; round++)
+        for (var round = 0; round < 5; round++)
         {
-            var final = round == 3 || calls >= 5;
+            var final = round == 4 || calls >= 7;
             var response = await Generate(contents, round == 0 ? "ANY" : final ? "NONE" : "AUTO", ct);
             var parts = response["parts"]?.AsArray() ?? throw new InvalidDataException("No content");
             var functions = parts.Where(p => p?["functionCall"] != null).ToArray();
             if (functions.Length == 0)
             {
                 if (calls == 0) throw new InvalidDataException("Missing evidence");
-                return await PrepararRespuesta(parts, products, sources, now, ct);
+                var answer = await PrepararRespuesta(parts, products, sources, now, ct);
+                return answer with { Investigaciones = investigations.ToArray(), Avisos = notices.Distinct().ToArray() };
             }
-            if (final || functions.Length > 3 || calls + functions.Length > 6) throw new InvalidDataException("Tool limit");
+            if (final || functions.Length > 3 || calls + functions.Length > 8) throw new InvalidDataException("Tool limit");
             contents.Add(response.DeepClone());
             var results = new JsonArray();
             foreach (var part in functions)
@@ -91,7 +106,13 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
                 var call = part!["functionCall"]!;
                 var name = call["name"]?.GetValue<string>() ?? "";
                 var args = call["args"] as JsonObject ?? new JsonObject();
-                var result = await Ejecutar(name, args, scope, products, sources, question.ProductosAnteriores ?? [], ct);
+                object result;
+                if (name == "InvestigarProductoWeb") {
+                    webCalls++;
+                    result = webCalls <= 2
+                        ? await Investigar(args, products, investigations, sources, notices, ct)
+                        : new { error = "Solo se investigan dos productos por consulta. Pedí otra consulta para ampliar." };
+                } else result = await Ejecutar(name, args, scope, products, sources, question.ProductosAnteriores ?? [], ct);
                 var functionResponse = new JsonObject {
                     ["name"] = name,
                     ["response"] = JsonSerializer.SerializeToNode(result)
@@ -113,7 +134,7 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
             if (name == "AclararConsulta") return new { alcance = "Solo consultas de productos y pedidos. Pedí aclaración si falta un dato. No hay resultados consultados." };
             if (name == "BuscarProductos")
             {
-                var query = Argument(args, "consulta", 80);
+                var query = ProductSearchTerms.Normalize(Argument(args, "consulta", 80));
                 GamingCityApi.ValidateSearch(query);
                 var result = await catalog.Query("products", query, ct, branchId: 6);
                 foreach (var product in result.Products) products[product.Id] = product;
@@ -175,6 +196,36 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or KeyNotFoundException)
         {
             return new { error = "No se pudo consultar la fuente. No hay datos confirmados para esta consulta." };
+        }
+    }
+
+    private async Task<object> Investigar(JsonObject args, Dictionary<string, GamingCityProduct> products,
+        List<AiWebResearch> investigations, HashSet<string> sources, List<string> notices, CancellationToken ct)
+    {
+        try {
+            var id = Argument(args, "id", 20);
+            var topic = Argument(args, "aspecto", 30);
+            if (!products.TryGetValue(id, out var product))
+                return new { error = "Primero buscá el producto en el catálogo actual. No se permite investigar IDs no consultados." };
+            if (research == null) return new { error = "La consulta web no está disponible." };
+            var result = await research.ReadAsync(product, topic, ct);
+            if (result == null) {
+                notices.Add("No se encontró evidencia web verificable para ampliar esta ficha.");
+                return new { error = "No encontré evidencia web verificable para ampliar este producto. No inventes especificaciones." };
+            }
+            investigations.Add(result);
+            sources.Add("Web · Google Search · " + product.Name);
+            return new { product.Id, product.Name, evidenciaWeb = result.Texto,
+                aviso = "El usuario verá esta investigación con sus fuentes. Es información web complementaria, no stock ni precio de Gamexid." };
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests) {
+            notices.Add("Google Search no está disponible por límite de cuota. La respuesta se limita a las fuentes que sí pudieron consultarse.");
+            return new { error = "Cuota de búsqueda web agotada. No hay evidencia web nueva; usá solo datos consultados del catálogo." };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or ArgumentException ||
+            ex is OperationCanceledException && !ct.IsCancellationRequested) {
+            notices.Add("No se pudo consultar la web. Las especificaciones adicionales no están verificadas.");
+            return new { error = "No se pudo verificar la información web. Respondé con el catálogo y aclará la limitación." };
         }
     }
 
@@ -262,6 +313,7 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         [{"functionDeclarations":[
           {"name":"BuscarProductos","description":"Busca productos vigentes en el catálogo Gaming City. Usá una categoría o nombre corto, por ejemplo gabinete; luego compará las características devueltas.","parameters":{"type":"OBJECT","properties":{"consulta":{"type":"STRING","description":"Nombre, categoría o código, entre 3 y 80 caracteres."}},"required":["consulta"]}},
           {"name":"VerFichaProducto","description":"Consulta las características confirmadas de un producto ya encontrado.","parameters":{"type":"OBJECT","properties":{"id":{"type":"STRING"}},"required":["id"]}},
+          {"name":"InvestigarProductoWeb","description":"Amplía especificaciones, usos y compatibilidad mediante Google Search y fuentes citadas. Solo para un producto ya encontrado en el catálogo en esta consulta. Máximo dos productos. No obtiene precios ni stock.","parameters":{"type":"OBJECT","properties":{"id":{"type":"STRING"},"aspecto":{"type":"STRING","enum":["especificaciones","compatibilidad","refrigeracion","conectividad","rendimiento","uso"]}},"required":["id","aspecto"]}},
           {"name":"ConsultarPedidos","description":"Totales de todos los pedidos filtrados y detalle de los cinco más recientes de la sucursal autorizada. El primero es el último registrado. Filtros opcionales combinados; no inventar filtros que no pidió el usuario.","parameters":{"type":"OBJECT","properties":{"referencia":{"type":"STRING","description":"Número de pedido o vacío."},"producto":{"type":"STRING","description":"Nombre corto de producto o EAN contenido en el pedido."},"estado":{"type":"STRING","description":"Pending (pendiente), Partial (parcial) o Received (recibido/completo). Vacío para todos."},"desde":{"type":"STRING","description":"Fecha inicial inclusiva yyyy-MM-dd, hora local Argentina."},"hasta":{"type":"STRING","description":"Fecha final inclusiva yyyy-MM-dd, hora local Argentina."}},"required":["referencia"]}},
           {"name":"AclararConsulta","description":"Para saludos, consultas ambiguas o fuera de Productos y Pedidos. No obtiene datos.","parameters":{"type":"OBJECT","properties":{}}}
         ]}]
