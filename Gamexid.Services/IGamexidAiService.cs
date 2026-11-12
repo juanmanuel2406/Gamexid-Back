@@ -1,7 +1,8 @@
 namespace Gamexid.Services;
 
 public record AiQuestion(string Mensaje, string ContextoPantalla, int SucursalId,
-    string[]? PreguntasAnteriores = null, string[]? ProductosAnteriores = null);
+    string[]? PreguntasAnteriores = null, string[]? ProductosAnteriores = null, AiBuildPart[]? Armado = null);
+public record AiBuildPart(string Slot, string ProductId, int Quantity = 1);
 public record AiScope(int UserId, int BranchId, string BranchName);
 public record AiProductCard(string Id, string Name, string Code, string Description,
     string? ImageUrl, string? WebUrl);

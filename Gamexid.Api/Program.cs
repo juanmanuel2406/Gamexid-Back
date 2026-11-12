@@ -16,6 +16,10 @@ builder.Services.AddSingleton(database);
 builder.Services.AddDbContext<GamexidDbContext>(database.Configure);
 builder.Services.AddSingleton<PdfInvoiceExtractor>();
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<Gamexid.Api.PcBuilder.PcBuilderService>(client => {
+    client.Timeout = TimeSpan.FromSeconds(12);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Gamexid/1.0");
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false }).RemoveAllLoggers();
 builder.Services.AddHttpClient<ProductPageReader>(client => {
     client.Timeout = TimeSpan.FromSeconds(8);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("Gamexid/1.0");
@@ -54,6 +58,9 @@ builder.Services.AddRateLimiter(options =>
     options.AddConcurrencyLimiter("pdf", opt => { opt.PermitLimit = 2; opt.QueueLimit = 0; });
     options.AddConcurrencyLimiter("photos", opt => { opt.PermitLimit = 4; opt.QueueLimit = 12; });
     options.AddFixedWindowLimiter("gc", opt => { opt.PermitLimit = 20; opt.Window = TimeSpan.FromMinutes(1); opt.QueueLimit = 0; });
+    options.AddPolicy("pc-builder", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 40, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("chat", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "anonymous",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 8, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
@@ -121,7 +128,7 @@ app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value ?? "";
     var requiresDatabase = path.StartsWith("/api/products") || path.StartsWith("/api/branches") ||
-        path.StartsWith("/api/inventory") || path.StartsWith("/api/orders") || path.StartsWith("/api/chat") ||
+        path.StartsWith("/api/pc-builder") || path.StartsWith("/api/inventory") || path.StartsWith("/api/orders") || path.StartsWith("/api/chat") ||
         path is "/api/access/login" or "/api/auth/login" or "/api/access/me";
     if (requiresDatabase && database.ConnectionString is null)
     {
