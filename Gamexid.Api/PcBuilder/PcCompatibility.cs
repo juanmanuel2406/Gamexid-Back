@@ -11,6 +11,28 @@ public static class PcCompatibility
         (i.OfferId == null || Guid.TryParse(i.OfferId, out _)) && i.ConfirmedCurrency is null or "ARS" or "USD") &&
         items.Select(i => i.Slot).Distinct().Count() == items.Length;
 
+    public static string? Category(string name)
+    {
+        var value = name.ToUpperInvariant();
+        return value.StartsWith("PROCESADOR") || value.StartsWith("CPU ") ? "cpu" :
+            value.StartsWith("MOTHER") || value.StartsWith("PLACA MADRE") ? "mother" :
+            value.StartsWith("MEMORIA DDR") || value.StartsWith("MEMORIA RAM") || value.StartsWith("RAM ") ? "ram" :
+            value.StartsWith("GABINETE") ? "case" : value.StartsWith("FUENTE") ? "psu" :
+            value.StartsWith("PLACA DE VIDEO") || value.StartsWith("PLACA VIDEO") ? "gpu" :
+            value.StartsWith("DISCO") || value.StartsWith("SSD ") ? "storage" :
+            value.StartsWith("COOLER CPU") || value.StartsWith("CPU COOLER") || value.StartsWith("WATER COOLER") ||
+            value.StartsWith("REFRIGERACION") ? "cooler" : null;
+    }
+    public static string SearchTerm(string slot) => slot switch {
+        "cpu" => "PROCESADOR", "mother" => "MOTHER", "ram" => "MEMORIA", "storage" => "DISCO",
+        "gpu" => "PLACA", "psu" => "FUENTE", "case" => "GABINETE", "cooler" => "COOLER",
+        _ => throw new ArgumentException("Paso inválido.")
+    };
+    public static string[] Prerequisites(string slot) => slot switch {
+        "cpu" => [], "mother" => ["cpu"], "ram" => ["cpu", "mother"],
+        _ => ["cpu", "mother", "ram"]
+    };
+
     public static PcCheck[] Check(PcLine[] lines)
     {
         var checks = new List<PcCheck>();
@@ -31,11 +53,7 @@ public static class PcCompatibility
                 : new("checked", title, $"Coincide {first} en las fichas. Este control no confirma el resto del armado."));
         }
         foreach (var line in lines) {
-            var name = line.Product.Name.ToUpperInvariant();
-            var category = name.StartsWith("PROCESADOR") ? "cpu" : name.StartsWith("MOTHER") ? "mother" :
-                name.StartsWith("MEMORIA DDR") ? "ram" : name.StartsWith("GABINETE") ? "case" :
-                name.StartsWith("FUENTE") ? "psu" : name.StartsWith("PLACA DE VIDEO") || name.StartsWith("PLACA VIDEO") ? "gpu" :
-                name.StartsWith("DISCO") || name.StartsWith("SSD ") ? "storage" : null;
+            var category = Category(line.Product.Name);
             if (category != null && category != line.Slot)
                 checks.Add(new("incompatible", "Tipo de componente", $"{line.Product.Name} no corresponde al espacio {line.Slot}."));
             if (category == null) checks.Add(new("pending", "Tipo de componente", $"Confirmar que {line.Product.Name} corresponde al espacio elegido ({line.Slot})."));

@@ -47,7 +47,9 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         Para 'mi armado' o 'esta PC', usá ConsultarArmado antes de evaluar lo seleccionado. Nunca cambies componentes automáticamente.
         No afirmes compatibilidad completa con datos pendientes. Socket coincidente no garantiza BIOS, potencia, conectores ni espacio.
         Preguntá uso y presupuesto cuando falten para recomendar; explicá los motivos sin prometer rendimiento no respaldado.
-        El catálogo del portal no representa inventario local por sucursal. El armado no es un pedido ni reserva stock.
+        El catálogo devuelve stock del portal de la sucursal seleccionada; no es el inventario registrado en MySQL.
+        Las herramientas de productos y armado usan esa sucursal. No afirmes stock en otra sede ni cambies de sede por el texto del mensaje.
+        Si no hay productos en esa sede, informalo; nunca sustituyas por el depósito. El armado no es un pedido ni reserva stock.
         Para pedidos usá fechas de Argentina. Las cantidades son unidades, no líneas; último significa mayor fecha de registro.
         Los filtros de pedidos se combinan. Los totales incluyen todos los pedidos filtrados; solo se muestran los cinco últimos.
         El historial sirve para entender referencias, nunca como evidencia confirmada. Si una fuente falla o es parcial, informalo.
@@ -74,7 +76,8 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         var contents = new JsonArray();
         var context = JsonSerializer.Serialize(new {
             pantalla = question.ContextoPantalla,
-            sucursalPedidos = scope.BranchName,
+            sucursalSeleccionada = scope.BranchName,
+            sucursalId = scope.BranchId,
             fechaUtc = now,
             zonaHoraria = "America/Argentina/Buenos_Aires",
             preguntasAnteriores = question.PreguntasAnteriores ?? [],
@@ -110,10 +113,11 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
                         if (builder == null) result = new { error = "El armador no está disponible." };
                         else {
                             var selections = (question.Armado ?? []).Select(p => new PcSelection(p.Slot, p.ProductId, p.Quantity)).ToArray();
-                            var build = await builder.Quote(scope.UserId, selections, ct);
+                            var portal = await CatalogBranch(scope, ct);
+                            var build = await builder.Quote(scope.UserId, selections, portal.Id, ct);
                             foreach (var line in build.Lines) products[line.Product.Id] = line.Product;
-                            sources.Add("Armado actual · fichas del catálogo y controles de compatibilidad");
-                            result = new { componentes = build.Lines.Select(l => new { l.Slot, l.Quantity, l.Product.Id, l.Product.Name, l.Product.Description }),
+                            sources.Add("Armado actual · " + scope.BranchName + " · fichas del catálogo y controles de compatibilidad");
+                            result = new { sucursal = scope.BranchName, componentes = build.Lines.Select(l => new { l.Slot, l.Quantity, l.Product.Id, l.Product.Name, l.Product.Description, l.Product.Stock }),
                                 controles = build.Checks, aviso = "Solo se verificaron estos controles. No hay confirmación global de compatibilidad ni precios consultados." };
                         }
                     } catch (Exception ex) when (ex is HttpRequestException or IOException or ArgumentException or KeyNotFoundException or InvalidOperationException) {
@@ -142,6 +146,13 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
         throw new InvalidDataException("No final answer");
     }
 
+    private async Task<GamingCityBranch> CatalogBranch(AiScope scope, CancellationToken ct)
+    {
+        var branch = await db.Branches.AsNoTracking().SingleOrDefaultAsync(b => b.Id == scope.BranchId && b.IsActive, ct)
+            ?? throw new InvalidOperationException("Sucursal no disponible.");
+        return catalog.ForGamexidBranch(branch.Code);
+    }
+
     private async Task<object> Ejecutar(string name, JsonObject args, AiScope scope,
         Dictionary<string, GamingCityProduct> products, HashSet<string> sources, string[] previousProducts, CancellationToken ct)
     {
@@ -152,12 +163,14 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
             {
                 var query = ProductSearchTerms.Normalize(Argument(args, "consulta", 80));
                 GamingCityApi.ValidateSearch(query);
-                var result = await catalog.Query("products", query, ct, branchId: 6);
+                var portal = await CatalogBranch(scope, ct);
+                var result = await catalog.Query("products", query, ct, branchId: portal.Id);
                 foreach (var product in result.Products) products[product.Id] = product;
-                sources.Add("Catálogo Gaming City · depósito del portal");
+                sources.Add("Catálogo Gaming City · " + scope.BranchName);
                 return new {
-                    fuente = "Gaming City; no es el inventario local", result.Total, result.Truncated,
-                    productos = result.Products.Select(p => new { p.Id, p.Name, p.Code, Description = p.Description[..Math.Min(p.Description.Length, 600)] })
+                    fuente = "Gaming City; stock del portal para la sucursal seleccionada, no inventario local",
+                    sucursal = scope.BranchName, result.Total, result.Truncated,
+                    productos = result.Products.Select(p => new { p.Id, p.Name, p.Code, p.Stock, Description = p.Description[..Math.Min(p.Description.Length, 600)] })
                 };
             }
             if (name == "VerFichaProducto")
@@ -165,11 +178,12 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
                 var id = Argument(args, "id", 20);
                 if (!products.TryGetValue(id, out var product)) {
                     if (!previousProducts.Contains(id)) return new { error = "Primero buscá el producto para obtener su ID real." };
-                    product = await catalog.ById(id, ct, branchId: 6);
+                    var portal = await CatalogBranch(scope, ct);
+                    product = await catalog.ById(id, ct, branchId: portal.Id);
                     products[id] = product;
-                    sources.Add("Catálogo Gaming City · depósito del portal");
+                    sources.Add("Catálogo Gaming City · " + scope.BranchName);
                 }
-                return new { product.Id, product.Name, product.Description, aviso = "Solo estos datos están confirmados. La imagen se obtiene de su ficha pública." };
+                return new { sucursal = scope.BranchName, product.Id, product.Name, product.Description, product.Stock, aviso = "Solo estos datos están confirmados. La imagen se obtiene de su ficha pública." };
             }
             if (name == "ConsultarPedidos")
             {

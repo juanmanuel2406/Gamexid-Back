@@ -34,8 +34,8 @@ dotnet run --project Gamexid.Api -- --check-db
 dotnet run --project Gamexid.Api -- --migrate
 ```
 
-Las migraciones originales se conservaron con sus identificadores. La nueva
-migración agrega relaciones y restricciones; no borra tablas ni registros.
+Las migraciones se conservan con sus identificadores. `--migrate` aplica solo
+las pendientes; revisar cada cambio antes de ejecutarlo. No es un respaldo de datos.
 `GamexidDbContextFactory` sirve a las herramientas de migración; no es otra base
 de datos ni un segundo contexto independiente.
 
@@ -57,20 +57,22 @@ se niega a sobrescribir usuarios existentes.
   cantidades y precios cuando son identificables y exige revisión. Un PDF que
   contiene solamente imágenes necesita OCR. Impuestos y descuentos no se infieren.
 
-## Alcance y publicación
+## Alcance y alojamiento
 
-Inventario, usuarios, productos, sucursales, unidades e ingresos usan MySQL.
-Los pedidos y controles de linaje/auditoría del frontend todavía usan el navegador.
-Los datos históricos locales se conservaron, pero no se importaron automáticamente.
-Los pedidos y auditorías del piloto anterior permanecen en sus almacenes originales.
-El modo MySQL usa almacenes locales separados para esos dos módulos: así un ID
-antiguo no vincula por error una sucursal o un serial diferente de la nueva base.
+El frontend Angular se sirve con Nginx en el VPS de Goodly, en
+https://gamexid.goodlycomunicacion.com. La API .NET 9 funciona en el mismo VPS
+como servicio `gamexid-api`, escuchando en `127.0.0.1:5099`; Nginx publica sus
+rutas bajo `/api`. MySQL se aloja por separado en Aiven y se accede con TLS.
+GitHub contiene el código; no es el alojamiento de la aplicación.
 
-Estos cambios no se publicaron en Ubuntu ni se subieron a GitHub. El servicio
-`Gamexid.Access` se conserva como acceso del piloto anterior; para el entorno nuevo
-se inicia `Gamexid.Api`, que incluye autenticación mediante cookies ASP.NET Core.
-Antes de publicar, configurar secretos y CA en Ubuntu, revisar el proxy de `/api`
-y permitir cargas PDF de hasta 11 MB. No reutilizar el límite anterior de 4 KB.
+Usuarios, productos propios, sucursales, pedidos, seriales y movimientos se
+persisten en MySQL. El catálogo del portal es externo y no equivale al inventario
+registrado en Gamexid. Los paneles de auditoría presentan información de las
+operaciones disponibles; no son una copia de respaldo de la base.
+
+Login/logout conservan el servicio `gamexid-access` en `127.0.0.1:5098`;
+`/api/access/me` y las operaciones se atienden desde `Gamexid.Api`.
+Ver [alojamiento](docs/alojamiento.md) y [contrato de armado por sucursal](docs/armado-sucursales.md).
 
 ## Catálogo Gaming City
 
@@ -81,7 +83,7 @@ Git, Angular, argumentos de URL del navegador ni documentación.
 
 - `GET /api/access/gc/status`: configuración presente, sin afirmar conexión.
 - `GET /api/access/gc/products?search=...`: búsqueda de 3 a 80 caracteres.
-- `GET /api/access/gc/products/{id}`: detalle para depósito 1.
+- `GET /api/access/gc/products/{id}`: detalle de la sucursal del portal indicada mediante `branchId`.
 - Requieren sesión y limitación de consultas. Solo lectura; no sincronizan inventario.
 - El proveedor devuelve `estado` y `resultados`; `solicitud` contiene la credencial
   y se descarta. Solo se publican ID, nombre, código, código de proveedor, SKU,
@@ -121,6 +123,8 @@ esta instalación. Revisar las rutas de versión antes de reutilizarlos en otra 
 `POST /api/chat/ask` conserva su contrato y requiere sesión y `X-Gamexid: 1`.
 Funciona en Productos, Pedidos y Armá tu PC. Solo consulta datos; los pedidos
 se filtran por la sucursal autorizada en el servidor, nunca por una indicación del modelo.
+Las herramientas de productos y armado resuelven esa misma sucursal mediante
+su código de Gamexid y el mapeo al portal. No se usa un depósito fijo como reemplazo.
 
 Puede explicar conceptos con conocimiento general, consultar el catálogo y buscar
 información pública de tecnología aunque el modelo no esté en Gaming City.

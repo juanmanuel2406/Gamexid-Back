@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Gamexid.Api.AI;
+using Gamexid.Api.PcBuilder;
 using Gamexid.Api.Controllers;
 using Gamexid.Models;
 using Gamexid.Services;
@@ -169,6 +170,36 @@ public class AssistantTests
     [InlineData("javascript:alert(1)")] [InlineData("https://127.0.0.1/private")] [InlineData("https://secret.internal/path")]
     public void UnsafeSourcesAreRejected(string url) => Assert.False(ProductWebResearch.IsSafeSource(url));
 
+    [Fact]
+    public async Task ProductToolsUseSelectedBranchEvenWhenModelAsksForAnother()
+    {
+        using var h = new Harness();
+        h.Db.Branches.Add(new Branch { Id = 13, Code = "GX-CABALLITO", Name = "Caballito" });
+        await h.Db.SaveChangesAsync();
+        h.Main.Reply = (_, n) => n == 1 ? Functions(("VerFichaProducto", new { id = "1", branchId = 6 })) : Final("Ficha consultada.");
+        var answer = await h.Service.AskAsync(new("Esa memoria", "Productos", 13, ProductosAnteriores: ["1"]), new(7, 13, "Caballito"), default);
+        Assert.Contains("Catálogo Gaming City · Caballito", answer.Fuentes);
+        Assert.Contains("branch-shop", Assert.Single(h.Catalog.Requests));
+        var evidence = h.Main.Requests[1]["contents"]![2]!["parts"]![0]!["functionResponse"]!["response"]!;
+        Assert.Equal(3, evidence["Stock"]!.GetValue<int>());
+        Assert.False(h.Db.ChangeTracker.HasChanges());
+    }
+
+    [Theory]
+    [InlineData("BuscarProductos")]
+    [InlineData("ConsultarArmado")]
+    public async Task SearchAndBuildToolsUseSelectedBranch(string tool)
+    {
+        using var h = new Harness();
+        h.Db.Branches.Add(new Branch { Id = 13, Code = "GX-CABALLITO", Name = "Caballito" });
+        await h.Db.SaveChangesAsync();
+        h.Main.Reply = (_, n) => n == 1 ? Functions((tool, new { consulta = "memoria", branchId = 6 })) : Final("Consultado.");
+        var answer = await h.Service.AskAsync(new("Mi memoria", "Armado", 13, Armado: [new("ram", "1")]), new(7, 13, "Caballito"), default);
+        Assert.Contains(answer.Fuentes, s => s.Contains("Caballito"));
+        Assert.Contains("branch-shop", Assert.Single(h.Catalog.Requests));
+        Assert.False(h.Db.ChangeTracker.HasChanges());
+    }
+
     private static string Final(string text, bool general = false) => JsonSerializer.Serialize(new {
         candidates = new[] { new { finishReason = "STOP", content = new { role = "model", parts = new[] { new { text = JsonSerializer.Serialize(new { respuesta = text, productos = Array.Empty<string>(), conocimientoGeneral = general }) } } } } }
     });
@@ -177,19 +208,24 @@ public class AssistantTests
     });
     private sealed class Harness : IDisposable {
         public GamexidDbContext Db = new(new DbContextOptionsBuilder<GamexidDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        public ModelHandler Main = new(); public WebHandler Web = new();
+        public ModelHandler Main = new(); public WebHandler Web = new(); public CatalogHandler Catalog = new();
         public ProductWebResearch Research; public GeminiGamexidAiService Service;
         public Harness() {
+            Db.Branches.Add(new Branch { Id = 2, Code = "DEP-CENTRAL", Name = "Sede A" });
+            Db.SaveChanges();
             var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> {
                 ["Gemini:Enabled"] = "true", ["Gemini:ApiKey"] = "key-secret-test", ["Gemini:Model"] = "gemini-3.5-flash-lite",
                 ["GamingCitySaaS:Iue"] = "catalog-test", ["GamingCitySaaS:Branches:0:Id"] = "6",
                 ["GamingCitySaaS:Branches:0:Name"] = "Depósito", ["GamingCitySaaS:Branches:0:DepotId"] = "1",
-                ["GamingCitySaaS:Branches:0:Iue"] = "catalog-test"
+                ["GamingCitySaaS:Branches:0:Iue"] = "catalog-test",
+                ["GamingCitySaaS:Branches:1:Id"] = "3", ["GamingCitySaaS:Branches:1:Name"] = "Caballito",
+                ["GamingCitySaaS:Branches:1:DepotId"] = "1", ["GamingCitySaaS:Branches:1:Iue"] = "branch-shop"
             }).Build();
             Research = new ProductWebResearch(new HttpClient(Web) { BaseAddress = new("https://generativelanguage.googleapis.com/v1beta/") }, config);
-            var gc = new GamingCityApi(new HttpClient(new CatalogHandler()) { BaseAddress = new("https://portal.gaming-city.com.ar/gcapi/") }, config);
+            var gc = new GamingCityApi(new HttpClient(Catalog) { BaseAddress = new("https://portal.gaming-city.com.ar/gcapi/") }, config);
             Service = new GeminiGamexidAiService(new HttpClient(Main) { BaseAddress = new("https://generativelanguage.googleapis.com/v1beta/") }, config, Db, gc,
-                new ProductPageReader(new HttpClient(), new MemoryCache(new MemoryCacheOptions())), Research);
+                new ProductPageReader(new HttpClient(), new MemoryCache(new MemoryCacheOptions())), Research,
+                new PcBuilderService(gc, new HttpClient(), new MemoryCache(new MemoryCacheOptions()), config));
         }
         public Task<AiAnswer> Ask() => Service.AskAsync(new("Consulta técnica", "Productos", 2, ProductosAnteriores: ["1"]), new(7, 2, "Sede A"), default);
         public void Dispose() => Db.Dispose();
@@ -212,8 +248,14 @@ public class AssistantTests
         }
     }
     private sealed class CatalogHandler : HttpMessageHandler {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) {
-            Content = new StringContent("""{"estado":true,"resultados":{"idproducto":"1","nombre":"MEMORIA DDR5","codigo":"RAM1","obstienda":"DDR5","stockactual":"3"}}""")
+        public List<string> Requests = [];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
+            Requests.Add(request.RequestUri!.Query);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) {
+            Content = new StringContent(request.RequestUri.AbsolutePath.Contains("saasgateway")
+                ? """{"estado":true,"resultados":{"idproducto":"1","nombre":"MEMORIA DDR5","codigo":"RAM1","obstienda":"DDR5","stockactual":"3"}}"""
+                : """{"estado":true,"resultados":[{"idproducto":"1","nombre":"MEMORIA DDR5","codigo":"RAM1","obstienda":"DDR5","stockactual":"3"}]}""")
         });
+        }
     }
 }

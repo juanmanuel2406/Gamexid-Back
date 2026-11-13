@@ -15,6 +15,23 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
         .Select(b => new GamingCityBranch(b.GetValue<int>("Id"), b["Name"] ?? "", b.GetValue<int>("DepotId")))
         .Where(b => b.Id > 0 && b.DepotId > 0).ToArray();
 
+    public GamingCityBranch ForGamexidBranch(string code)
+    {
+        var mappings = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
+            ["DEP-CENTRAL"] = 6, ["GX-UNICENTER"] = 14, ["GX-LAPLATA"] = 10,
+            ["GX-SANMIGUEL"] = 9, ["GX-SANISIDRO"] = 11, ["GX-MERLO"] = 12,
+            ["GX-CATAN1"] = 5, ["GX-CATAN2"] = 7, ["GX-BELGRANO"] = 22,
+            ["GX-ABASTO"] = 8, ["GX-PALERMO"] = 18, ["GX-CABALLITO"] = 3,
+            ["GX-LINIERS"] = 16, ["GX-MARDELPLATA"] = 4, ["GX-MENDOZA"] = 15,
+            ["GX-CORRIENTES"] = 19
+        };
+        var configured = config.GetValue<int?>("GamingCitySaaS:BranchMap:" + code);
+        if (!configured.HasValue && !mappings.TryGetValue(code, out _))
+            throw new InvalidOperationException("La sucursal de Gamexid no está vinculada al portal.");
+        var id = configured ?? mappings[code];
+        return ResolveBranch(id).Branch;
+    }
+
     private (GamingCityBranch Branch, string Key) ResolveBranch(int? branchId)
     {
         if (!IsConfigured(config)) throw new InvalidOperationException("Falta configurar la credencial privada de Gaming City.");
