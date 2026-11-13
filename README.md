@@ -116,33 +116,42 @@ Producción: https://gamexid.goodlycomunicacion.com.
 Los archivos deploy/gamexid-api.service y deploy/nginx-gamexid-api.conf reflejan
 esta instalación. Revisar las rutas de versión antes de reutilizarlos en otra máquina.
 
-## Asistente de Productos y Pedidos
+## Asistente de tecnología
 
-`POST /api/chat/ask` recibe `mensaje`, `contextoPantalla`, `sucursalId` y hasta seis
-`preguntasAnteriores`. Requiere sesión y la cabecera `X-Gamexid: 1`. Los pedidos
-se limitan a la sucursal autorizada; el catálogo consulta el depósito del portal.
-El asistente solo lee datos. Las fotos provienen de las fichas de Gaming City.
+`POST /api/chat/ask` conserva su contrato y requiere sesión y `X-Gamexid: 1`.
+Funciona en Productos, Pedidos y Armá tu PC. Solo consulta datos; los pedidos
+se filtran por la sucursal autorizada en el servidor, nunca por una indicación del modelo.
 
-Configurar `Gemini:Enabled`, `Gemini:ApiKey` y `Gemini:Model` en secretos locales
-o en la configuración privada del VPS. Modelo comprobado: `gemini-3.5-flash-lite`.
-Nunca colocar la clave en Angular ni en archivos versionados. El proveedor recibe
-las consultas y los datos necesarios de productos/pedidos, sin credenciales ni costos.
-`GET /api/chat/status` indica si está configurado. Límite: ocho consultas por minuto
-por usuario, tres simultáneas y hasta ocho llamadas a herramientas por consulta.
+Puede explicar conceptos con conocimiento general, consultar el catálogo y buscar
+información pública de tecnología aunque el modelo no esté en Gaming City.
+Distingue catálogo, pedidos, evidencia web y conocimiento general pendiente de verificar.
+Los precios, stock y compatibilidades específicas no se completan de memoria.
 
-### Consulta ampliada de productos
+- `InvestigarWeb`: consulta técnica pública de 3 a 200 caracteres.
+- `InvestigarProductoWeb`: investigación de un producto consultado en el catálogo.
+- Ambas comparten tres búsquedas por mensaje. Se admiten seis pasos del modelo
+  y hasta doce llamadas a herramientas, dentro del límite de 90 segundos.
+- La búsqueda libre bloquea patrones de datos privados y claves configuradas;
+  no se habilita después de consultar pedidos en el mismo mensaje.
+- Solo se publican fragmentos web con referencias verificadas en los metadatos de Google.
+  Las referencias se numeran y agrupan para conservar las tres investigaciones en el frontend existente.
+- Si falta cuota web, se muestra el aviso y se puede responder con conocimiento general,
+  sin presentarlo como información investigada.
 
-`ProductSearchTerms` normaliza nombres comunes sin cambiar modelos o capacidades.
-`GeminiGamexidAiService` interpreta la pregunta y consulta el catálogo antes de
-habilitar `InvestigarProductoWeb`. `ProductWebResearch` usa Google Search desde
-el servidor para ampliar hasta dos productos por consulta. Solo devuelve fragmentos
-con fuentes presentes en los metadatos de Google; no obtiene stock ni precios.
-El modelo de búsqueda puede configurarse con `Gemini:SearchModel`; si se omite,
-usa `Gemini:Model`. Google Search necesita cuota disponible en la cuenta.
+`Gemini:Model` configura el modelo principal y `Gemini:SearchModel` el de búsqueda;
+vacío reutiliza el principal. `Gemini:ThinkingLevel` vacío conserva el comportamiento
+predeterminado; acepta `minimal`, `low`, `medium` o `high` para modelos Gemini 3 que
+admitan ese nivel. Verificar soporte del modelo antes de cambiarlo.
+`Gemini:Enabled` y `Gemini:ApiKey` permanecen en secretos locales o configuración
+privada del VPS. No se incluyen claves en el repositorio ni en Angular.
 
-La respuesta incluye `investigaciones` con texto, referencias y sugerencias de búsqueda,
-y `avisos` cuando una fuente no pudo consultarse. Angular muestra las sugerencias
-en un iframe aislado, sin permisos de scripts ni acceso al documento principal.
-El servidor acepta 90 segundos por consulta; el proxy debe permitir al menos 95.
-Una cuota web agotada no se presenta como una investigación exitosa: se conservan
-los resultados del catálogo y se muestra la limitación. Las claves siguen fuera del repositorio.
+`GET /api/chat/status` informa si está configurado. Hay ocho preguntas por minuto
+por usuario y tres consultas simultáneas. El proxy debe permitir 95 segundos.
+Las sugerencias de Google se muestran en el iframe aislado ya existente.
+
+Verificación:
+
+```powershell
+dotnet build Gamexid.sln -c Release
+dotnet test Gamexid.Tests/Gamexid.Tests.csproj -c Release
+```

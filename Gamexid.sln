@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gamexid.Services", "Gamexid
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gamexid.Access", "Gamexid.Access\Gamexid.Access.csproj", "{CB828B9F-CA87-4B6C-B598-ADC020899A0B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gamexid.Tests", "Gamexid.Tests\Gamexid.Tests.csproj", "{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{CB828B9F-CA87-4B6C-B598-ADC020899A0B}.Release|x64.Build.0 = Release|Any CPU
 		{CB828B9F-CA87-4B6C-B598-ADC020899A0B}.Release|x86.ActiveCfg = Release|Any CPU
 		{CB828B9F-CA87-4B6C-B598-ADC020899A0B}.Release|x86.Build.0 = Release|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Debug|x64.Build.0 = Debug|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Debug|x86.Build.0 = Debug|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Release|x64.ActiveCfg = Release|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Release|x64.Build.0 = Release|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Release|x86.ActiveCfg = Release|Any CPU
+		{89908DA1-0DFB-460F-83E2-4C16C1B5C9FA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
