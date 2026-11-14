@@ -33,6 +33,10 @@ public class CatalogController(GamexidDbContext db, GamingCityApi catalog) : Con
         catch (ArgumentException ex) { return BadRequest(new { mensaje = ex.Message }); }
         catch (KeyNotFoundException) { return NotFound(new { mensaje = "Producto no disponible en el catálogo." }); }
         catch (InvalidOperationException) { return StatusCode(503, new { mensaje = "Esta sucursal no tiene configurada su conexión al portal." }); }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests) {
+            Response.Headers.RetryAfter = "60";
+            return StatusCode(429, new { mensaje = "El portal alcanzó su límite de consultas. Esperá un minuto y volvé a buscar." });
+        }
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or System.Text.Json.JsonException || ex is OperationCanceledException && !ct.IsCancellationRequested) {
             return StatusCode(502, new { mensaje = "No se pudo consultar el catálogo de esta sucursal. Reintentá." });
         }

@@ -145,7 +145,10 @@ public class PcBuilderService(GamingCityApi catalog, HttpClient http, IMemoryCac
             if (checks.Any(c => c.Status == "incompatible")) continue;
             var relevant = checks.Where(c => c.Title != "Componente pendiente").ToArray();
             var status = relevant.Any(c => c.Status == "pending") ? "pending" : "checked";
-            if (request.IncludePending || status == "checked") options.Add(new(product, status, relevant));
+            if (request.IncludePending || status == "checked") {
+                cache.Set("pc-product:" + branchId + ":" + product.Id, product, TimeSpan.FromMinutes(2));
+                options.Add(new(product, status, relevant));
+            }
         }
         return new(0, branchName, request.Slot, options.ToArray(), catalogResult.Truncated, [], selectionChecks, DateTime.UtcNow);
     }

@@ -108,3 +108,8 @@ Las preguntas generales siguen disponibles sin consultar el catálogo.
 Si el portal devuelve una ficha individual sin identidad, se busca el ID exacto
 en el catálogo disponible de la misma sucursal. No se toma una ficha de otra sede;
 si no existe allí, la consulta informa que el producto no está disponible.
+
+Los candidatos ya consultados se conservan durante dos minutos, separados por
+sucursal y producto, para evitar pedir otra vez la misma ficha al avanzar y ver
+precios. El stock no se reserva. Si Gaming City limita las consultas (HTTP 429),
+la API devuelve un aviso para esperar un minuto y reintentar.

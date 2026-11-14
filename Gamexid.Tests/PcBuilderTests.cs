@@ -161,6 +161,20 @@ public class PcBuilderTests
         await Assert.ThrowsAsync<KeyNotFoundException>(() => h.Catalog.ById("999", default, 3));
     }
 
+    [Fact]
+    public async Task LoadedOptionsReuseBranchProductWithoutRepeatingDetailRequest()
+    {
+        using var h = new Fixture();
+        await h.Service.Options(new PcStepRequest("cpu", [], 13), 3, "Caballito", default);
+        var calls = h.Handler.Calls;
+        var product = await h.Service.Product("1", 3, default);
+        Assert.Equal(2m, product.Stock);
+        Assert.Equal(calls, h.Handler.Calls);
+        var other = await h.Service.Product("1", 6, default);
+        Assert.Equal(8m, other.Stock);
+        Assert.Equal(calls + 1, h.Handler.Calls);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public GamexidDbContext Db = new(new DbContextOptionsBuilder<GamexidDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

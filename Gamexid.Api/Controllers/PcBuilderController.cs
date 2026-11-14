@@ -43,6 +43,10 @@ public class PcBuilderController(PcBuilderService builder, GamexidDbContext db, 
         catch (ArgumentException ex) { return BadRequest(new { mensaje = ex.Message }); }
         catch (KeyNotFoundException) { return NotFound(new { mensaje = "El producto ya no está disponible en el catálogo." }); }
         catch (InvalidOperationException) { return StatusCode(503, new { mensaje = "La sucursal no tiene una conexión válida con el portal. Revisá su configuración." }); }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests) {
+            Response.Headers.RetryAfter = "60";
+            return StatusCode(429, new { mensaje = "El portal alcanzó su límite de consultas. Esperá un minuto y volvé a buscar." });
+        }
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or System.Text.Json.JsonException || ex is OperationCanceledException && !ct.IsCancellationRequested) {
             return StatusCode(502, new { mensaje = "No se pudo verificar la fuente. Esperá un momento y reintentá." });
         }
