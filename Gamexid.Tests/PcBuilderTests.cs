@@ -175,6 +175,37 @@ public class PcBuilderTests
         Assert.Equal(calls + 1, h.Handler.Calls);
     }
 
+    [Theory]
+    [InlineData("MOTHER AM4", "MEMORIA DDR3", "incompatible")]
+    [InlineData("MOTHER AM4", "MEMORIA DDR 3", "incompatible")]
+    [InlineData("MOTHER AM4", "MEMORIA DDR-3", "incompatible")]
+    [InlineData("MOTHER AM4", "MEMORIA DDR4", "checked")]
+    [InlineData("MOTHER AM5", "MEMORIA DDR4", "incompatible")]
+    [InlineData("MOTHER AM5", "MEMORIA DDR5", "checked")]
+    [InlineData("MOTHER DDR4", "MEMORIA DDR3", "incompatible")]
+    [InlineData("MOTHER SIN DATOS", "MEMORIA DDR3", "pending")]
+    public void MemoryGenerationUsesPlatformAndRecognizesSpacing(string board, string ram, string status)
+    {
+        PcLine Line(string slot, string name) => new(slot, new("1", name, "", "", "", 100, 2), 1, null, null, null);
+        var checks = PcCompatibility.Check([Line("mother", board), Line("ram", ram)]);
+        Assert.Contains(checks, c => c.Title == "Generación de memoria" && c.Status == status);
+        if (status != "incompatible") Assert.DoesNotContain(checks, c => c.Status == "incompatible");
+    }
+
+    [Fact]
+    public async Task Ddr3IsFilteredAndCannotBeQuotedWithAm4EvenWithoutMotherboardDdrLabel()
+    {
+        using var h = new Fixture();
+        h.Handler.LegacyRam = true;
+        var selection = new PcSelection[] { new("cpu", "1"), new("mother", "2") };
+        var options = await h.Service.Options(new("ram", selection), 3, "Caballito", default);
+        Assert.Empty(options.Products);
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => h.Service.Quote(7, [.. selection, new("ram", "7")], 3, default));
+        Assert.Contains("DDR4", error.Message);
+        Assert.Contains("DDR3", error.Message);
+        Assert.Contains("No se puede generar el presupuesto", error.Message);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public GamexidDbContext Db = new(new DbContextOptionsBuilder<GamexidDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -207,6 +238,7 @@ public class PcBuilderTests
     {
         public int Calls;
         public bool UnknownSocket;
+        public bool LegacyRam;
         public bool IncompleteDetail;
         public List<int> Branches = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -217,9 +249,9 @@ public class PcBuilderTests
             object Row(string id, string name, int stock) => new { idproducto = id, nombre = name, codigo = "P" + id, stockactual = stock, preciofinal = 100, obstienda = "" };
             var rows = new[] {
                 Row("1", "PROCESADOR AM4", branch == 6 ? 8 : 2),
-                Row("2", UnknownSocket ? "MOTHER SIN SOCKET DDR4" : "MOTHER AM4 DDR4", 2),
+                Row("2", LegacyRam ? "MOTHER AM4" : UnknownSocket ? "MOTHER SIN SOCKET DDR4" : "MOTHER AM4 DDR4", 2),
                 Row("3", "PROCESADOR AM5", 2), Row("4", "MOTHER AM5 DDR5", 2), Row("5", "MOTHER AM4 DDR4", 0),
-                Row("6", "MEMORIA DDR5", 3), Row("7", "MEMORIA DDR4", 3)
+                Row("6", "MEMORIA DDR5", 3), Row("7", LegacyRam ? "MEMORIA DDR3" : "MEMORIA DDR4", 3)
             };
             object result = request.RequestUri.AbsolutePath.Contains("saasgateway")
                 ? IncompleteDetail ? new { archivos = new object[0], pedido = "" } : rows.Single(r => JsonSerializer.SerializeToElement(r).GetProperty("idproducto").GetString() == request.RequestUri.Segments.Last()) : rows;

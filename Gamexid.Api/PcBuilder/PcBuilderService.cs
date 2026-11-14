@@ -119,9 +119,13 @@ public class PcBuilderService(GamingCityApi catalog, HttpClient http, IMemoryCac
             var currency = offer?.Currency ?? selection.ConfirmedCurrency;
             lines.Add(new(selection.Slot, product, selection.Quantity, offer, currency, offer == null || currency == null ? null : offer.Amount * selection.Quantity));
         }
+        var checks = PcCompatibility.Check(lines.ToArray());
+        var incompatible = checks.Where(c => c.Status == "incompatible").ToArray();
+        if (incompatible.Length > 0)
+            throw new ArgumentException("No se puede generar el presupuesto: " + string.Join(" ", incompatible.Select(c => c.Detail)));
         var totals = lines.Where(l => l.Subtotal != null).GroupBy(l => l.Currency!)
             .Select(g => new PcTotal(g.Key, g.Sum(l => l.Subtotal!.Value))).ToArray();
-        return new(lines.ToArray(), PcCompatibility.Check(lines.ToArray()), totals, lines.Count(l => l.Subtotal == null), DateTime.UtcNow);
+        return new(lines.ToArray(), checks, totals, lines.Count(l => l.Subtotal == null), DateTime.UtcNow);
     }
     public async Task<PcOptions> Options(PcStepRequest request, int branchId, string branchName, CancellationToken ct)
     {

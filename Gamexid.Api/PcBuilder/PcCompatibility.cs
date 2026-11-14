@@ -65,7 +65,32 @@ public static class PcCompatibility
                 "cpu" => "Procesador", "mother" => "Motherboard", "ram" => "Memoria RAM", "storage" => "Almacenamiento",
                 "psu" => "Fuente", _ => "Gabinete" }));
         Compare("cpu", "mother", @"\b(?:AM[45]|LGA\s?(?:1151|1200|1700|1851))\b", "Socket del procesador y motherboard");
-        Compare("mother", "ram", @"\bDDR[345]\b", "Generación de memoria");
+        string? Memory(string slot) {
+            var product = lines.FirstOrDefault(l => l.Slot == slot)?.Product;
+            if (product == null) return null;
+            string? Read(string text) => Spec(Regex.Replace(text.ToUpperInvariant(), @"DDR[\s-]*", "DDR"), @"\bDDR[345](?!\d)");
+            var memory = Read(product.Name) ?? Read(product.Description);
+            if (slot == "ram") return memory;
+            var socket = Spec(Text(slot), @"\bAM[45]\b");
+            var platformMemory = socket == "AM4" ? "DDR4" : socket == "AM5" ? "DDR5" : null;
+            if (platformMemory != null && memory != null && memory != platformMemory)
+                checks.Add(new("incompatible", "Generación de memoria", $"La ficha de {product.Name} contradice su plataforma: {socket} requiere {platformMemory}, no {memory}."));
+            return platformMemory ?? memory;
+        }
+        if (Text("ram") != "") {
+            var ram = Memory("ram");
+            foreach (var slot in new[] { "mother", "cpu" }) {
+                if (Text(slot) == "") continue;
+                var required = Memory(slot);
+                if (slot == "cpu" && required == null) continue;
+                var component = slot == "mother" ? "motherboard" : "procesador";
+                checks.Add(required == null || ram == null
+                    ? new("pending", "Generación de memoria", $"Falta confirmar la generación de RAM admitida por el {component}. No se confirmó compatibilidad.")
+                    : required != ram
+                        ? new("incompatible", "Generación de memoria", $"El {component} requiere {required}; la memoria elegida es {ram}. Elegí una memoria {required}.")
+                        : new("checked", "Generación de memoria", $"La memoria {ram} coincide con la generación admitida por el {component}."));
+            }
+        }
         if (Text("cpu") != "" && Text("mother") != "")
             checks.Add(new("pending", "BIOS", "Confirmar el modelo exacto de CPU en la lista de soporte del fabricante y la versión de BIOS instalada."));
         if (Text("ram") != "") checks.Add(new("pending", "Memoria y ranuras", "Revisar DIMM/SO-DIMM, capacidad, cantidad de módulos por kit y ranuras disponibles."));

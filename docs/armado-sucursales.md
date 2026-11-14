@@ -113,3 +113,13 @@ Los candidatos ya consultados se conservan durante dos minutos, separados por
 sucursal y producto, para evitar pedir otra vez la misma ficha al avanzar y ver
 precios. El stock no se reserva. Si Gaming City limita las consultas (HTTP 429),
 la API devuelve un aviso para esperar un minuto y reintentar.
+
+### Corrección de memoria (14/11)
+
+La validación reconoce DDR3, DDR4 y DDR5, incluso con espacios o guiones.
+Para plataformas identificadas aplica AM4 → DDR4 y AM5 → DDR5, aunque la ficha
+no repita la generación de RAM. Las combinaciones incompatibles se excluyen de
+las opciones y el presupuesto se rechaza si todavía contiene alguna.
+Una ficha sin datos suficientes sigue marcada como pendiente, no como compatible.
+Referencias: [AMD AM4](https://www.amd.com/en/products/processors/chipsets.html)
+y [AMD AM5](https://www.amd.com/en/products/processors/chipsets/am5.html).
