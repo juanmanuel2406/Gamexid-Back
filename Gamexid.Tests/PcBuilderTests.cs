@@ -149,14 +149,14 @@ public class PcBuilderTests
     }
 
     [Fact]
-    public async Task IncompleteDetailUsesExactProductFromSameBranchCatalog()
+    public async Task DetailUsesExactProductFromBranchCatalogInsteadOfGateway()
     {
         using var h = new Fixture();
         h.Handler.IncompleteDetail = true;
         var product = await h.Catalog.ById("1", default, 3);
         Assert.Equal("1", product.Id);
         Assert.Equal(2m, product.Stock);
-        Assert.Equal(2, h.Handler.Calls);
+        Assert.Equal(1, h.Handler.Calls);
         Assert.All(h.Handler.Branches, b => Assert.Equal(3, b));
         await Assert.ThrowsAsync<KeyNotFoundException>(() => h.Catalog.ById("999", default, 3));
     }
@@ -254,7 +254,7 @@ public class PcBuilderTests
                 Row("6", "MEMORIA DDR5", 3), Row("7", LegacyRam ? "MEMORIA DDR3" : "MEMORIA DDR4", 3)
             };
             object result = request.RequestUri.AbsolutePath.Contains("saasgateway")
-                ? IncompleteDetail ? new { archivos = new object[0], pedido = "" } : rows.Single(r => JsonSerializer.SerializeToElement(r).GetProperty("idproducto").GetString() == request.RequestUri.Segments.Last()) : rows;
+                ? IncompleteDetail ? Row("1", "VGA RTX 4080 GDDR6", 10) : rows.Single(r => JsonSerializer.SerializeToElement(r).GetProperty("idproducto").GetString() == request.RequestUri.Segments.Last()) : rows;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { estado = true, resultados = result })) });
         }
     }

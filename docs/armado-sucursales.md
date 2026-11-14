@@ -105,9 +105,9 @@ stock del portal. Un texto que pida otra sede no modifica la autorización.
 El stock del portal no equivale a las unidades registradas en MySQL.
 Las preguntas generales siguen disponibles sin consultar el catálogo.
 
-Si el portal devuelve una ficha individual sin identidad, se busca el ID exacto
-en el catálogo disponible de la misma sucursal. No se toma una ficha de otra sede;
-si no existe allí, la consulta informa que el producto no está disponible.
+Las fichas se resuelven por ID exacto dentro del listado del catálogo de la misma
+sucursal. Se evita el gateway individual, que en la prueba real devolvió otro
+producto con el mismo ID. Si el producto ya no está disponible, se informa el error.
 
 Los candidatos ya consultados se conservan durante dos minutos, separados por
 sucursal y producto, para evitar pedir otra vez la misma ficha al avanzar y ver

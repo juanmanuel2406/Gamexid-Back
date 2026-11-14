@@ -102,21 +102,13 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
         if (id.Length is < 1 or > 20 || id.Any(c => c is < '0' or > '9'))
             throw new ArgumentException("El ID de producto debe contener solamente números.");
         var (branch, key) = ResolveBranch(branchId);
-        using var json = await Request("saasgateway.php/productos/" + id + $"?iddeposito={branch.DepotId}&appname=gcportal", key, ct);
-        var row = ParseResults(json);
-        if (row.ValueKind == JsonValueKind.Object && string.IsNullOrWhiteSpace(Text(row, "idproducto"))) {
-            using var listing = await Request($"saas.php?action=productos&cantidad=completo&appname=gcportal&iddeposito={branch.DepotId}&busqueda=", key, ct);
-            var rows = ParseResults(listing);
-            if (rows.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Catálogo inválido.");
-            var match = rows.EnumerateArray().FirstOrDefault(r => r.ValueKind == JsonValueKind.Object && Text(r, "idproducto") == id);
-            if (match.ValueKind == JsonValueKind.Undefined || !Visible(match, branch.Id, true, true))
-                throw new KeyNotFoundException("Producto no disponible en esta sucursal.");
-            return Product(match, branch.Id);
-        }
-        var product = Product(row, branch.Id);
-        if (product.Id != id) throw new InvalidDataException("El proveedor devolvió otro producto.");
-        if (!Visible(row, branch.Id, false, false)) throw new KeyNotFoundException("Producto fuera del catálogo vigente.");
-        return product;
+        using var listing = await Request($"saas.php?action=productos&cantidad=completo&appname=gcportal&iddeposito={branch.DepotId}&busqueda=", key, ct);
+        var rows = ParseResults(listing);
+        if (rows.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Catálogo inválido.");
+        var match = rows.EnumerateArray().FirstOrDefault(r => r.ValueKind == JsonValueKind.Object && Text(r, "idproducto") == id);
+        if (match.ValueKind == JsonValueKind.Undefined || !Visible(match, branch.Id, true, false))
+            throw new KeyNotFoundException("Producto no disponible en esta sucursal.");
+        return Product(match, branch.Id);
     }
 
     private async Task<JsonDocument> Request(string path, string key, CancellationToken ct)
