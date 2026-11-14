@@ -131,6 +131,36 @@ public class PcBuilderTests
         Assert.Equal(0, h.Handler.Calls);
     }
 
+    [Fact]
+    public async Task CatalogAllowsBrowsingPagesAndScopesLocalBranch()
+    {
+        using var h = new Fixture();
+        var controller = new CatalogController(h.Db, h.Catalog) { ControllerContext = h.Controller().ControllerContext };
+        Assert.IsType<ForbidResult>(await controller.Products(2, default));
+        var result = Assert.IsType<OkObjectResult>(await controller.Products(13, default, page: 2, pageSize: 2));
+        var json = JsonSerializer.SerializeToElement(result.Value);
+        var data = json.GetProperty("data");
+        Assert.Equal(2, data.GetProperty("Page").GetInt32());
+        Assert.Equal(2, data.GetProperty("Products").GetArrayLength());
+        Assert.Equal(6, data.GetProperty("Total").GetInt32());
+        Assert.All(h.Handler.Branches, b => Assert.Equal(3, b));
+        Assert.IsType<BadRequestObjectResult>(await controller.Products(13, default, page: 0));
+        Assert.False(h.Db.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
+    public async Task IncompleteDetailUsesExactProductFromSameBranchCatalog()
+    {
+        using var h = new Fixture();
+        h.Handler.IncompleteDetail = true;
+        var product = await h.Catalog.ById("1", default, 3);
+        Assert.Equal("1", product.Id);
+        Assert.Equal(2m, product.Stock);
+        Assert.Equal(2, h.Handler.Calls);
+        Assert.All(h.Handler.Branches, b => Assert.Equal(3, b));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => h.Catalog.ById("999", default, 3));
+    }
+
     private sealed class Fixture : IDisposable
     {
         public GamexidDbContext Db = new(new DbContextOptionsBuilder<GamexidDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -163,6 +193,7 @@ public class PcBuilderTests
     {
         public int Calls;
         public bool UnknownSocket;
+        public bool IncompleteDetail;
         public List<int> Branches = [];
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -177,7 +208,7 @@ public class PcBuilderTests
                 Row("6", "MEMORIA DDR5", 3), Row("7", "MEMORIA DDR4", 3)
             };
             object result = request.RequestUri.AbsolutePath.Contains("saasgateway")
-                ? rows.Single(r => JsonSerializer.SerializeToElement(r).GetProperty("idproducto").GetString() == request.RequestUri.Segments.Last()) : rows;
+                ? IncompleteDetail ? new { archivos = new object[0], pedido = "" } : rows.Single(r => JsonSerializer.SerializeToElement(r).GetProperty("idproducto").GetString() == request.RequestUri.Segments.Last()) : rows;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { estado = true, resultados = result })) });
         }
     }

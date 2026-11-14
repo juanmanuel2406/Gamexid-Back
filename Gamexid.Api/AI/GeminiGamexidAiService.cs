@@ -120,7 +120,7 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
                             result = new { sucursal = scope.BranchName, componentes = build.Lines.Select(l => new { l.Slot, l.Quantity, l.Product.Id, l.Product.Name, l.Product.Description, l.Product.Stock }),
                                 controles = build.Checks, aviso = "Solo se verificaron estos controles. No hay confirmación global de compatibilidad ni precios consultados." };
                         }
-                    } catch (Exception ex) when (ex is HttpRequestException or IOException or ArgumentException or KeyNotFoundException or InvalidOperationException) {
+                    } catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or ArgumentException or KeyNotFoundException or InvalidOperationException) {
                         result = new { error = "No se pudieron verificar todos los componentes. No afirmes compatibilidad." };
                     }
                 } else if (name is "InvestigarProductoWeb" or "InvestigarWeb") {
@@ -223,7 +223,7 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
             return new { error = "Función no habilitada." };
         }
         catch (ArgumentException) { return new { error = "Parámetros inválidos. Pedí al usuario que precise la consulta." }; }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or InvalidOperationException or KeyNotFoundException)
         {
             return new { error = "No se pudo consultar la fuente. No hay datos confirmados para esta consulta." };
         }
@@ -257,7 +257,7 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
             notices.Add("Google Search no está disponible por límite de cuota. La respuesta se limita a las fuentes que sí pudieron consultarse.");
             return new { error = "Cuota de búsqueda web agotada. No hay evidencia web nueva; Podés explicar conceptos generales, etiquetados como conocimiento general (verificar)." };
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or ArgumentException ||
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or JsonException or ArgumentException ||
             ex is OperationCanceledException && !ct.IsCancellationRequested) {
             notices.Add("No se pudo consultar la web. Las especificaciones adicionales no están verificadas.");
             return new { error = "No se pudo verificar la información web. Aclará la limitación y distinguí conocimiento general de datos verificados." };

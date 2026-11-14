@@ -29,6 +29,7 @@ El navegador recibe Angular desde Nginx. Las solicitudes `/api` llegan al backen
 que valida la sesión y consulta MySQL, Gaming City o Gemini según la operación.
 El navegador no recibe las credenciales de esos servicios.
 
-La publicación del backend no requiere recompilar el frontend si se conserva el
-contrato existente. Las nuevas pantallas por pasos deben integrarse con los
-endpoints documentados; hasta entonces no se presentan como terminadas.
+La entrega de sucursales incluye backend y frontend: la interfaz por pasos utiliza
+`/api/pc-builder/options` y el catálogo paginado utiliza `/api/catalog/products`.
+Ambos reciben la sede local seleccionada. Nginx permite hasta 95 segundos para
+consultas de armado que necesitan comprobar varios productos del proveedor.

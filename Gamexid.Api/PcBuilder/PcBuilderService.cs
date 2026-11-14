@@ -150,7 +150,7 @@ public class PcBuilderService(GamingCityApi catalog, HttpClient http, IMemoryCac
         return new(0, branchName, request.Slot, options.ToArray(), catalogResult.Truncated, [], selectionChecks, DateTime.UtcNow);
     }
 
-    private static bool SourceFailure(Exception ex, CancellationToken ct) => ex is HttpRequestException or IOException or JsonException or RegexMatchTimeoutException ||
+    private static bool SourceFailure(Exception ex, CancellationToken ct) => ex is HttpRequestException or IOException or InvalidDataException or JsonException or RegexMatchTimeoutException ||
         ex is OperationCanceledException && !ct.IsCancellationRequested;
     private async Task<string> Read(HttpRequestMessage request, CancellationToken ct) {
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);

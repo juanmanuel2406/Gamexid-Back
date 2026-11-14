@@ -1,7 +1,7 @@
 # Armado de PC y asistente por sucursal
 
-Cambio del 13 de noviembre de 2026. Esta entrega modifica el backend; el diseño
-y la integración visual quedan pendientes para el frontend.
+Actualizado el 14 de noviembre de 2026. Backend y frontend comparten la sucursal
+seleccionada. El armado utiliza el diseño por pasos integrado en esta entrega.
 
 ## Identificación y permisos
 
@@ -32,7 +32,7 @@ No se añadieron tablas ni migraciones; los presupuestos no reservan stock.
 
 ## Selección por pasos
 
-Orden sugerido: `cpu`, `mother`, `ram`, `storage`, `gpu`, `psu`, `case`, `cooler`.
+Orden sugerido: `cpu`, `mother`, `ram`, `gpu`, `storage`, `psu`, `case`, `cooler`.
 GPU y cooler requieren revisión según gráficos integrados y refrigeración incluida;
 no deben descartarse automáticamente por no ser obligatorios en el formulario.
 
@@ -81,10 +81,21 @@ publicaciones elegidas y presupuesto, y volver a validar los componentes en la
 nueva sede. Los precios temporales se vinculan al usuario, producto y sucursal;
 reutilizar un `offerId` de otra sede se rechaza.
 
-El frontend actual tiene `branchId: 6` fijo en su búsqueda de armado. Debe reemplazar
-esa llamada por `/api/pc-builder/options`, enviando el ID local seleccionado.
-No basta con cambiar 6 por el ID local en el endpoint general del catálogo:
-`/api/access/gc/products` continúa recibiendo IDs del portal.
+El frontend cancela las consultas anteriores y reinicia el armado al cambiar la
+sucursal. Productos, Pedidos, Sedes y el inicio comparten el selector global.
+Los registros de pedidos e inventario propios permanecen separados del catálogo
+externo; mostrar productos del portal no los ingresa automáticamente a MySQL.
+
+## Catálogo por sucursal
+
+`GET /api/catalog/products?branchId=13&page=1&pageSize=50` permite recorrer el
+catálogo sin escribir una búsqueda. Acepta `search`, `onlyInStock` y `hideCombos`.
+Devuelve `data`, `branchId` y `branchName`; `data.total` informa la cantidad de
+productos y `data.products` contiene la página solicitada. `pageSize` admite
+hasta 100 productos. La interfaz utiliza páginas de 50 y permite recorrerlas todas.
+`GET /api/catalog/products/{id}?branchId=13` obtiene la ficha en la misma sede.
+Ambos endpoints validan la sucursal autorizada y utilizan IDs locales.
+El endpoint heredado `/api/access/gc/products` conserva sus IDs del portal.
 
 ## Asistente
 
@@ -93,3 +104,7 @@ y ConsultarArmado ahora resuelven esa sucursal, identifican la fuente y devuelve
 stock del portal. Un texto que pida otra sede no modifica la autorización.
 El stock del portal no equivale a las unidades registradas en MySQL.
 Las preguntas generales siguen disponibles sin consultar el catálogo.
+
+Si el portal devuelve una ficha individual sin identidad, se busca el ID exacto
+en el catálogo disponible de la misma sucursal. No se toma una ficha de otra sede;
+si no existe allí, la consulta informa que el producto no está disponible.

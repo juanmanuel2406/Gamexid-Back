@@ -4,7 +4,7 @@ using System.Text.Json;
 public sealed record GamingCityProduct(string Id, string Name, string Code, string SupplierCode,
     string Sku, decimal? Price, decimal? Stock, string Description = "", string? WebUrl = null);
 public sealed record GamingCityBranch(int Id, string Name, int DepotId);
-public sealed record GamingCityCatalog(GamingCityProduct[] Products, int Total, bool Truncated);
+public sealed record GamingCityCatalog(GamingCityProduct[] Products, int Total, bool Truncated, int Page = 1, int PageSize = 100, decimal TotalStock = 0);
 
 public sealed class GamingCityApi(HttpClient http, IConfiguration config)
 {
@@ -80,20 +80,21 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
     }
 
     public async Task<GamingCityCatalog> Query(string operation, string? search, CancellationToken ct,
-        int? branchId = null, bool onlyInStock = true, bool hideCombos = true)
+        int? branchId = null, bool onlyInStock = true, bool hideCombos = true, int page = 1, int pageSize = 100, bool allowEmpty = false)
     {
         if (operation != "products") throw new ArgumentException("Operación no habilitada para el catálogo.");
-        var term = ValidateSearch(search);
+        if (page < 1 || page > 10000 || pageSize < 1 || pageSize > 100) throw new ArgumentException("Paginación inválida.");
+        var term = allowEmpty && string.IsNullOrWhiteSpace(search) ? "" : ValidateSearch(search);
         var (branch, key) = ResolveBranch(branchId);
-        var limit = term.Length >= 4 ? "completo" : "200";
+        var limit = allowEmpty || term.Length >= 4 ? "completo" : "200";
         using var json = await Request($"saas.php?action=productos&cantidad={limit}&appname=gcportal&iddeposito={branch.DepotId}" +
             (onlyInStock ? "" : "&sinstock=1") + "&busqueda=" + Uri.EscapeDataString(term), key, ct);
         var rows = ParseResults(json);
         if (rows.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Catálogo inválido.");
         var visible = rows.EnumerateArray().Select(row => new { Row = row, Product = Product(row, branch.Id) })
             .Where(item => Visible(item.Row, branch.Id, onlyInStock, hideCombos)).ToArray();
-        var products = visible.Select(item => item.Product).OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).Take(100).ToArray();
-        return new(products, visible.Length, visible.Length > products.Length);
+        var products = visible.Select(item => item.Product).OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).Skip((page - 1) * pageSize).Take(pageSize).ToArray();
+        return new(products, visible.Length, visible.Length > products.Length, page, pageSize, visible.Sum(p => Math.Max(0, p.Product.Stock ?? 0)));
     }
 
     public async Task<GamingCityProduct> ById(string id, CancellationToken ct, int? branchId = null)
@@ -103,6 +104,15 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
         var (branch, key) = ResolveBranch(branchId);
         using var json = await Request("saasgateway.php/productos/" + id + $"?iddeposito={branch.DepotId}&appname=gcportal", key, ct);
         var row = ParseResults(json);
+        if (row.ValueKind == JsonValueKind.Object && string.IsNullOrWhiteSpace(Text(row, "idproducto"))) {
+            using var listing = await Request($"saas.php?action=productos&cantidad=completo&appname=gcportal&iddeposito={branch.DepotId}&busqueda=", key, ct);
+            var rows = ParseResults(listing);
+            if (rows.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Catálogo inválido.");
+            var match = rows.EnumerateArray().FirstOrDefault(r => r.ValueKind == JsonValueKind.Object && Text(r, "idproducto") == id);
+            if (match.ValueKind == JsonValueKind.Undefined || !Visible(match, branch.Id, true, true))
+                throw new KeyNotFoundException("Producto no disponible en esta sucursal.");
+            return Product(match, branch.Id);
+        }
         var product = Product(row, branch.Id);
         if (product.Id != id) throw new InvalidDataException("El proveedor devolvió otro producto.");
         if (!Visible(row, branch.Id, false, false)) throw new KeyNotFoundException("Producto fuera del catálogo vigente.");
@@ -191,7 +201,7 @@ public sealed class GamingCityApi(HttpClient http, IConfiguration config)
         catch (HttpRequestException e) when (e.StatusCode == System.Net.HttpStatusCode.TooManyRequests) {
             return Results.Json(new { mensaje = "Gaming City limitó temporalmente las consultas. Esperá unos segundos y volvé a intentar." }, statusCode: 429);
         }
-        catch (Exception e) when (e is HttpRequestException or IOException or JsonException or OperationCanceledException) {
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidDataException or JsonException or OperationCanceledException) {
             return Results.Json(new { mensaje = "No se pudo consultar Gaming City. Reintentá con una búsqueda más específica." }, statusCode: 502);
         }
     }
