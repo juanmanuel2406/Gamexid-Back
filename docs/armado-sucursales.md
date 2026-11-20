@@ -123,3 +123,25 @@ las opciones y el presupuesto se rechaza si todavía contiene alguna.
 Una ficha sin datos suficientes sigue marcada como pendiente, no como compatible.
 Referencias: [AMD AM4](https://www.amd.com/en/products/processors/chipsets.html)
 y [AMD AM5](https://www.amd.com/en/products/processors/chipsets/am5.html).
+
+## Cooler incluido (20/11/2026)
+
+La respuesta de precios agrega `cooling` para el CPU: `included`, `excluded` o
+`unknown`, con el motivo. Se revisa la presentación del producto de esa sede.
+Las indicaciones explícitas del catálogo y los códigos BOX/WOF o BX tienen
+prioridad sobre suponer un cooler por la gama comercial. Un OEM vendido
+explícitamente CON COOLER puede ser un conjunto del vendedor.
+
+La selección del CPU acepta `useIncludedCooler`. No se crea otro artículo ni se
+suma un precio de refrigeración. Si falta evidencia, `coolerConfirmed` registra
+la confirmación expresa del vendedor y el presupuesto la distingue de un dato
+verificado. Esta confirmación no habilita productos identificados sin cooler.
+El backend rechaza marcarlo en otro componente o combinarlo con un cooler aparte.
+Cambiar CPU o sucursal descarta la elección; el asistente recibe esa selección.
+
+Referencias consultadas: [Intel: caja y tray](https://www.intel.com/content/www/us/en/support/articles/000029613/processors.html),
+[Intel: variantes sin cooler](https://www.intel.com/content/www/us/en/support/articles/000005940/processors.html)
+y [AMD: versiones con refrigeración](https://www.amd.com/en/products/processors/ecosystem/cpu-cooler-solutions.html).
+La lista AMD se aplica solo a presentaciones en caja identificadas, no a cualquier
+unidad del mismo modelo. No se certifica capacidad térmica para overclock ni
+espacio físico del gabinete por elegir esta opción.

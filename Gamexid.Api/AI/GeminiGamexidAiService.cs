@@ -112,7 +112,7 @@ public class GeminiGamexidAiService(HttpClient http, IConfiguration config, Game
                     try {
                         if (builder == null) result = new { error = "El armador no está disponible." };
                         else {
-                            var selections = (question.Armado ?? []).Select(p => new PcSelection(p.Slot, p.ProductId, p.Quantity)).ToArray();
+                            var selections = (question.Armado ?? []).Select(p => new PcSelection(p.Slot, p.ProductId, p.Quantity, UseIncludedCooler: p.UseIncludedCooler, CoolerConfirmed: p.CoolerConfirmed)).ToArray();
                             var portal = await CatalogBranch(scope, ct);
                             var build = await builder.Quote(scope.UserId, selections, portal.Id, ct);
                             foreach (var line in build.Lines) products[line.Product.Id] = line.Product;

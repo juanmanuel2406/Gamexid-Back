@@ -206,6 +206,49 @@ public class PcBuilderTests
         Assert.Contains("No se puede generar el presupuesto", error.Message);
     }
 
+    [Theory]
+    [InlineData("PROCESADOR AMD RYZEN 5 5500", "100-100000457BOX", "included")]
+    [InlineData("PROCESADOR AMD RYZEN 7 5700X SIN COOLER", "100-100000926WOF", "excluded")]
+    [InlineData("PROCESADOR AMD RYZEN 5 5600 BULK", "100-100000927BOX", "excluded")]
+    [InlineData("PROCESADOR AMD RYZEN 5 PRO 4650G OEM CON COOLER", "", "included")]
+    [InlineData("PROCESADOR INTEL CORE I5-13400", "BX8071513400", "included")]
+    [InlineData("PROCESADOR INTEL CORE I7-14700K BOX", "", "excluded")]
+    [InlineData("PROCESADOR INTEL CORE I5-12400F TRAY", "", "excluded")]
+    [InlineData("PROCESADOR AMD RYZEN 5 5600", "", "unknown")]
+    public void CoolerDependsOnExactPresentation(string name, string supplierCode, string expected)
+    {
+        var product = new GamingCityProduct("1", name, "", supplierCode, "", 100, 2);
+        Assert.Equal(expected, PcCooling.Read(product).Status);
+    }
+
+    [Fact]
+    public async Task IncludedCoolerDoesNotAddPriceAndCannotBeForgedForBulk()
+    {
+        using var h = new Fixture();
+        h.Handler.CpuName = "PROCESADOR AM4 CON COOLER";
+        var prices = await h.Service.Prices(7, "1", 3, default);
+        Assert.Equal("included", prices.Cooling!.Status);
+        var quote = await h.Service.Quote(7, [new("cpu", "1", OfferId: prices.Offers[0].Id, UseIncludedCooler: true)], 3, default);
+        Assert.Single(quote.Lines);
+        Assert.Equal(100m, Assert.Single(quote.Totals).Amount);
+        Assert.Contains(quote.Checks, c => c.Title == "Refrigeración" && c.Status == "checked");
+        using var bulk = new Fixture();
+        bulk.Handler.CpuName = "PROCESADOR AM4 BULK SIN COOLER";
+        await Assert.ThrowsAsync<ArgumentException>(() => bulk.Service.Quote(7, [new("cpu", "1", UseIncludedCooler: true, CoolerConfirmed: true)], 3, default));
+    }
+
+    [Fact]
+    public async Task UnknownCoolerRequiresSellerConfirmationAndCannotCombineWithAnotherCooler()
+    {
+        using var h = new Fixture();
+        await Assert.ThrowsAsync<ArgumentException>(() => h.Service.Quote(7, [new("cpu", "1", UseIncludedCooler: true)], 3, default));
+        var quote = await h.Service.Quote(7, [new("cpu", "1", UseIncludedCooler: true, CoolerConfirmed: true)], 3, default);
+        Assert.Contains(quote.Checks, c => c.Title == "Refrigeración" && c.Status == "pending" && c.Detail.Contains("vendedor"));
+        var lines = new PcLine[] { new("cpu", new("1", "PROCESADOR CON COOLER", "", "", "", 100, 2), 1, null, null, null) };
+        Assert.Contains(PcCooling.Check([new("cpu", "1", UseIncludedCooler: true), new("cooler", "2")], lines), c => c.Status == "incompatible");
+        Assert.False(PcCompatibility.Valid([new("ram", "1", UseIncludedCooler: true)]));
+    }
+
     private sealed class Fixture : IDisposable
     {
         public GamexidDbContext Db = new(new DbContextOptionsBuilder<GamexidDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -238,6 +281,7 @@ public class PcBuilderTests
     {
         public int Calls;
         public bool UnknownSocket;
+        public string? CpuName;
         public bool LegacyRam;
         public bool IncompleteDetail;
         public List<int> Branches = [];
@@ -248,7 +292,7 @@ public class PcBuilderTests
             Branches.Add(branch);
             object Row(string id, string name, int stock) => new { idproducto = id, nombre = name, codigo = "P" + id, stockactual = stock, preciofinal = 100, obstienda = "" };
             var rows = new[] {
-                Row("1", "PROCESADOR AM4", branch == 6 ? 8 : 2),
+                Row("1", CpuName ?? "PROCESADOR AM4", branch == 6 ? 8 : 2),
                 Row("2", LegacyRam ? "MOTHER AM4" : UnknownSocket ? "MOTHER SIN SOCKET DDR4" : "MOTHER AM4 DDR4", 2),
                 Row("3", "PROCESADOR AM5", 2), Row("4", "MOTHER AM5 DDR5", 2), Row("5", "MOTHER AM4 DDR4", 0),
                 Row("6", "MEMORIA DDR5", 3), Row("7", LegacyRam ? "MEMORIA DDR3" : "MEMORIA DDR4", 3)

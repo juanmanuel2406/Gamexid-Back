@@ -6,7 +6,7 @@ public static class PcCompatibility
 {
     public static readonly string[] Slots = ["cpu", "mother", "ram", "gpu", "storage", "psu", "case", "cooler"];
     public static bool Valid(PcSelection[]? items) => items is { Length: <= 8 } && items.All(i => i != null &&
-        Slots.Contains(i.Slot) && i.ProductId != null && Regex.IsMatch(i.ProductId, @"^[0-9]{1,20}$") &&
+        Slots.Contains(i.Slot) && (!i.UseIncludedCooler || i.Slot == "cpu") && (!i.CoolerConfirmed || i.UseIncludedCooler) && i.ProductId != null && Regex.IsMatch(i.ProductId, @"^[0-9]{1,20}$") &&
         i.Quantity >= 1 && i.Quantity <= (i.Slot is "ram" or "storage" ? 4 : 1) &&
         (i.OfferId == null || Guid.TryParse(i.OfferId, out _)) && i.ConfirmedCurrency is null or "ARS" or "USD") &&
         items.Select(i => i.Slot).Distinct().Count() == items.Length;

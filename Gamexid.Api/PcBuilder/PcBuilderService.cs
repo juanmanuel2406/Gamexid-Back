@@ -42,7 +42,7 @@ public class PcBuilderService(GamingCityApi catalog, HttpClient http, IMemoryCac
             } catch (Exception ex) when (SourceFailure(ex, ct)) { notices.Add("No se pudo consultar el precio de la página."); }
         }
         notices.Add("Precios sin envío ni armado. Verificá condiciones de pago en la fuente. Cotización válida durante 15 minutos.");
-        return new(offers.ToArray(), notices.ToArray());
+        return new(offers.ToArray(), notices.ToArray(), PcCompatibility.Category(product.Name) == "cpu" ? PcCooling.Read(product) : null);
     }
     public static (decimal Amount, string Currency)? ParseWebPrice(string html)
     {
@@ -119,7 +119,10 @@ public class PcBuilderService(GamingCityApi catalog, HttpClient http, IMemoryCac
             var currency = offer?.Currency ?? selection.ConfirmedCurrency;
             lines.Add(new(selection.Slot, product, selection.Quantity, offer, currency, offer == null || currency == null ? null : offer.Amount * selection.Quantity));
         }
-        var checks = PcCompatibility.Check(lines.ToArray());
+        var checks = PcCompatibility.Check(lines.ToArray()).Concat(PcCooling.Check(selections, lines.ToArray())).ToArray();
+        if (selections.Any(i => i.UseIncludedCooler))
+            checks = checks.Select(c => c.Title == "Gráficos y refrigeración"
+                ? c with { Title = "Gráficos", Detail = lines.Any(l => l.Slot == "gpu") ? "Verificar los conectores de la placa de video." : "Confirmar gráficos integrados y salida de video del procesador." } : c).ToArray();
         var incompatible = checks.Where(c => c.Status == "incompatible").ToArray();
         if (incompatible.Length > 0)
             throw new ArgumentException("No se puede generar el presupuesto: " + string.Join(" ", incompatible.Select(c => c.Detail)));

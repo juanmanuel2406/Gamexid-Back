@@ -27,7 +27,7 @@ public class ChatController(GamexidDbContext db, IGamexidAiService ai) : Control
             question.ContextoPantalla is not ("Productos" or "Pedidos" or "Armado") || question.SucursalId <= 0 ||
             question.Armado is { Length: > 8 } ||
             question.Armado != null && !Gamexid.Api.PcBuilder.PcCompatibility.Valid(question.Armado.Select(p =>
-                p == null ? null! : new Gamexid.Api.PcBuilder.PcSelection(p.Slot, p.ProductId, p.Quantity)).ToArray()) ||
+                p == null ? null! : new Gamexid.Api.PcBuilder.PcSelection(p.Slot, p.ProductId, p.Quantity, UseIncludedCooler: p.UseIncludedCooler, CoolerConfirmed: p.CoolerConfirmed)).ToArray()) ||
             question.PreguntasAnteriores is { Length: > 6 } ||
             question.ProductosAnteriores is { Length: > 4 } ||
             question.ProductosAnteriores?.Any(id => string.IsNullOrEmpty(id) || id.Length > 20 || id.Any(c => c is < '0' or > '9')) == true ||
